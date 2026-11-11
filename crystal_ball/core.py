@@ -4,7 +4,7 @@ import concurrent.futures as futures
 from .config import load, rules_for
 from .cache import dumps, atomic, fingerprint, Store, runtime_stamp
 from .checks import SCRIPTS, load_qc, platforms
-from .util import row, skip, command, process_json, norm, spelling_checks, validate_checks, foreign_python_env, error_result
+from .util import row, skip, command, process_json, norm, spelling_checks, validate_checks, engine_python_env, error_result
 from .frames import probe, caption_times, review_stage as _review_stage
 from .report import write_report
 from .senses.read import ocr_stage, confirm_safe_zones
@@ -30,8 +30,10 @@ def run_stage(stage, request, timeout=None):
     try:
         request_path=Path(request["run_dir"])/f"{stage}-request.json"
         atomic(request_path,dumps(request))
-        env=foreign_python_env({"OMP_THREAD_LIMIT":"1","OPENBLAS_NUM_THREADS":"1","HF_HUB_OFFLINE":"1","CRYSTAL_BALL_STAGE":"1"})
-        value=process_json([sys.executable,"-m","crystal_ball.stage_worker",stage,request_path],timeout or TIMEOUTS[stage],env)
+        cfg=request.get('config') or load()
+        python=cfg['see']['python'] if stage in {'review','ocr','editing'} else sys.executable
+        env=engine_python_env(python,{"OMP_THREAD_LIMIT":"1","OPENBLAS_NUM_THREADS":"1","HF_HUB_OFFLINE":"1","CRYSTAL_BALL_STAGE":"1"})
+        value=process_json([python,"-m","crystal_ball.stage_worker",stage,request_path],timeout or TIMEOUTS[stage],env)
         if not isinstance(value,dict) or "error" in value:
             raise ValueError(str(value.get("error","invalid stage object")))
         return value
@@ -80,7 +82,7 @@ def compact(doc, cached=False):
     counts = {status: sum(r["status"] == status for r in checks) for status in ("PASS", "WARN", "FAIL", "SKIP")}
     incomplete = any(r["status"] == "SKIP" and r["id"] not in {"caption zone", "continuous_review"} for r in checks)
     verdict = "FAIL" if counts["FAIL"] else "WARN" if counts["WARN"] or incomplete else "PASS"
-    issues = [{**r,"timestamps":list(r["timestamps"])} for r in checks if r["status"] in {"FAIL", "WARN"}]
+    issues = [{**r,"timestamps":list(r["timestamps"])} for r in checks if r["status"] != "PASS"]
     issues.sort(key=lambda r: (r["status"] != "FAIL", r["id"]))
     # Merge repeating frame findings while retaining every finding in the full report.
     grouped = {}
@@ -102,20 +104,42 @@ def compact(doc, cached=False):
     logs = sorted({stage['log'] for stage in doc.get('stages', {}).values() if stage.get('log')})
     if logs:
         result['log'] = logs[0]
-    # Preserve the most severe findings; explicit omitted count points to full report.
-    original = len(issues)
-    while len(dumps(result).encode()) > MAX_BYTES and len(result["items"]) > 1:
-        result["items"].pop()
-        result["omitted_items"] = original - len(result["items"])
-    if len(dumps(result).encode()) > MAX_BYTES:
-        for r in result["items"]:
-            r["summary"] = r["summary"][:80]
-            r["fix"] = r["fix"][:100]
-            r["timestamps"] = r["timestamps"][:2]
-    while len(dumps(result).encode()) > MAX_BYTES and result["not_checked"]:
-        result["not_checked"].pop()
-        result["more_not_checked_in_report"] = True
+    return fit_compact(result)
+
+def fit_compact(result):
+    """Spend the budget on every non-PASS identity before optional details."""
+    result['omitted_details']=result.get('omitted_details',0)
+    for limit in (80,40):
+        if len(dumps(result).encode())<=MAX_BYTES:
+            return result
+        for item in result['items']:
+            if 'summary' in item:
+                item['summary']=item['summary'][:limit]
+                item['fix']=item.get('fix','')[:limit]
+                item['timestamps']=item.get('timestamps',[])[:2]
+    # not_checked is a compatibility detail list; SKIP identities also live in items.
+    while len(dumps(result).encode())>MAX_BYTES and result['not_checked']:
+        result['not_checked'].pop()
+        result['more_not_checked_in_report']=True
+    for index in range(len(result['items'])-1,-1,-1):
+        if len(dumps(result).encode())<=MAX_BYTES:
+            return result
+        item=result['items'][index]
+        if 'summary' in item:
+            result['items'][index]={k:item[k] for k in ('id','status')}
+            result['omitted_details']+=1
+    # Multiple findings may share an identity; keep that identity once when details go.
+    unique=[]
+    for item in result['items']:
+        if item not in unique:
+            unique.append(item)
+    result['items']=unique
+    for key in ('inference','review_frames','log','platform','cached'):
+        if len(dumps(result).encode())<=MAX_BYTES:
+            break
+        result.pop(key,None)
     return result
+
 def _base_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", force=False, beat_led=False):
     cfg = load()
     path = Path(file).expanduser().resolve()
@@ -226,11 +250,6 @@ def quality_check(file, platform=None, captions=None, script=None, brief=None, e
         if fixed["status"] == "written":
             checked, _ = _base_check(fixed["file"], platform, captions, script, brief, expect_text, mode, False, beat_led)
             result["fix"].update(verdict=checked["verdict"], counts=checked["counts"], report=checked["report"])
-        # Leave both verdicts visible when the optional fix envelope needs more space.
-        while len(dumps(result).encode()) > MAX_BYTES and result["items"]:
-            result["items"].pop()
-            result["omitted_items"] = result.get("omitted_items", 0) + 1
-        while len(dumps(result).encode()) > MAX_BYTES and result["not_checked"]:
-            result["not_checked"].pop()
-            result["more_not_checked_in_report"] = True
+        # Refit details around the fix result while preserving all finding identities.
+        fit_compact(result)
     return result

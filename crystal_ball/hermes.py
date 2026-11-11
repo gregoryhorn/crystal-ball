@@ -9,7 +9,7 @@ from pathlib import Path
 from .cache import dumps
 from .config import load
 from .hooks import Hooks
-from .util import error_result, StageError, foreign_python_env
+from .util import error_result, StageError, same_python_env
 
 ACTIONS=['check','transcribe','find','index','read_text','fix','doctor','beats','scenes','cuts']
 
@@ -26,11 +26,10 @@ def profile_config():
     return str(candidate) if candidate.is_file() else None
 
 def invoke(action,**params):
-    env=foreign_python_env({'HF_HUB_OFFLINE':'1'})
+    env=same_python_env({'HF_HUB_OFFLINE':'1'})
     config=profile_config()
     if config:
         env['CRYSTAL_BALL_CONFIG']=config
-    env['PYTHONPATH']=os.pathsep.join([str(Path(__file__).resolve().parent.parent),*[p for p in sys.path if p],env.get('PYTHONPATH','')])
     proc=subprocess.Popen([sys.executable,'-m','crystal_ball.tool_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,start_new_session=True)
     try:
         out,err=proc.communicate(dumps({'action':action,**params}),timeout=1800)

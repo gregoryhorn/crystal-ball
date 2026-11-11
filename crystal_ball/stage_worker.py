@@ -1,5 +1,5 @@
 """Private isolated stages; stdout is a single JSON object."""
-import json, sys
+import json, os, sys
 from pathlib import Path
 from . import core
 from .cache import dumps
@@ -8,6 +8,24 @@ from .util import error_result
 def main():
     stage='stage'; req={}
     try:
+        if len(sys.argv)==1:
+            # Nested engines share this worker's process group and outer deadline.
+            os.environ['CRYSTAL_BALL_STAGE']='1'
+            payload=json.load(sys.stdin)
+            stage=payload['operation']; req=payload['request']
+            if stage=='visual':
+                from .visual import _scan
+                value=_scan(req['file'],req['config'])
+            elif stage=='voice_balance':
+                from .senses.hear import _voice_balance
+                value=_voice_balance(req['file'],req['transcript'],req['config'])
+            elif stage=='read_text':
+                from .senses.read import _read_text
+                value=_read_text(req['file'],req.get('at'),req['config'])
+            else:
+                raise ValueError('unknown media operation')
+            print(dumps(value))
+            return 0
         stage, request = sys.argv[1:]
         req=json.loads(Path(request).read_text())
         from .editing import edit_stage

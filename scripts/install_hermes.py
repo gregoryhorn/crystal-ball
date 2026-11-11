@@ -17,12 +17,18 @@ def install(home, config_from=None, uninstall=False):
     home=Path(home).expanduser().resolve()
     manifest=home/MANIFEST
     previous=json.loads(manifest.read_text()) if manifest.is_file() else {'files':{},'dirs':[]}
-    # Only paths in our two installation trees and our one config may be removed.
+    # Accept historical manifests; only installation paths are removable below.
     def owned(name):
         p=Path(name)
         return not p.is_absolute() and '..' not in p.parts and (name=='crystal-ball.toml' or name.startswith(('plugins/crystal-ball/','skills/crystal-ball/')))
     if any(not owned(name) for name in previous['files']) or any(not (name in {'plugins','skills','plugins/crystal-ball','skills/crystal-ball'} or owned(name)) for name in previous['dirs']):
         raise ValueError('invalid install manifest')
+    # Migrate old manifests too: even an unchanged installer-created config is data.
+    previous['files'].pop('crystal-ball.toml',None)
+    previous['user_data']=['crystal-ball.toml']
+    config=home/'crystal-ball.toml'
+    if config.exists() or config.is_symlink():
+        print(f'kept user config: {config}')
     if uninstall:
         retained=[]
         for name,sha in previous['files'].items():
@@ -50,7 +56,7 @@ def install(home, config_from=None, uninstall=False):
         for p in source.rglob('*'):
             if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc':
                 sources[str(Path(dest)/p.relative_to(source))]=p.read_bytes()
-    if not (home/'crystal-ball.toml').exists():
+    if not config.exists() and not config.is_symlink():
         sources['crystal-ball.toml']=Path(config_from or ROOT/'crystal-ball.example.toml').read_bytes()
     # Check all collisions before writing anything.
     for name,data in sources.items():
@@ -68,8 +74,17 @@ def install(home, config_from=None, uninstall=False):
             if not parent.exists():
                 dirs.add(str(parent.relative_to(home)))
         p.parent.mkdir(parents=True,exist_ok=True)
-        p.write_bytes(data); files[name]=digest(data)
-    manifest.write_text(json.dumps({'files':files,'dirs':sorted(dirs)},indent=2)+'\n')
+        if name=='crystal-ball.toml':
+            # Exclusive creation also preserves config created during installation.
+            try:
+                with p.open('xb') as target:
+                    target.write(data)
+            except FileExistsError:
+                print(f'kept user config: {p}')
+        else:
+            p.write_bytes(data)
+            files[name]=digest(data)
+    manifest.write_text(json.dumps({'files':files,'dirs':sorted(dirs),'user_data':['crystal-ball.toml']},indent=2)+'\n')
     return {'status':'installed','files':len(files),'manifest':str(manifest)}
 
 

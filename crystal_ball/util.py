@@ -3,16 +3,33 @@ from pathlib import Path
 from .cache import dumps, atomic, fingerprint
 import traceback
 
-def foreign_python_env(extra=None):
-    """Give an engine its own stdlib and only our package import root."""
+def _python_env(extra=None):
+    """Remove inherited interpreter selectors without changing this process."""
     env = {**os.environ, **(extra or {})}
     for key in ('PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'PYTHONUSERBASE',
                 'PYTHONEXECUTABLE', 'VIRTUAL_ENV', '__PYVENV_LAUNCHER__',
                 'PYTHONSAFEPATH', 'CONDA_PREFIX'):
         env.pop(key, None)
     env['PYTHONNOUSERSITE'] = '1'
+    return env
+
+def foreign_python_env(extra=None):
+    """Give an engine its own stdlib and only our package import root."""
+    env = _python_env(extra)
     env['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
     return env
+
+def same_python_env(extra=None):
+    """A base executable may need paths injected into its running venv parent."""
+    env = _python_env(extra)
+    paths = [str(Path(__file__).resolve().parent.parent),
+             *(os.path.abspath(p or os.curdir) for p in sys.path)]
+    env['PYTHONPATH'] = os.pathsep.join(dict.fromkeys(paths))
+    return env
+
+def engine_python_env(python, extra=None):
+    # Do not resolve symlinks: a venv's bin/python and its base are distinct runtimes.
+    return (same_python_env if str(python)==sys.executable else foreign_python_env)(extra)
 
 class StageError(RuntimeError):
     def __init__(self, stage, detail, log=None, summary=None):

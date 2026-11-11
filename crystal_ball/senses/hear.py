@@ -15,13 +15,13 @@ import unicodedata
 from pathlib import Path
 from ..cache import Store, dumps, runtime_stamp
 from ..config import load
-from ..util import command, row, skip, foreign_python_env, has_audio_stream, StageError, error_result, error_summary
+from ..util import command, row, skip, engine_python_env, has_audio_stream, StageError, error_result, error_summary
 
 class Worker:
     def __init__(self, config=None):
         self.cfg=config or load(); self.proc=None; self.lock=threading.Lock(); self.counter=0
     def start(self):
-        env=foreign_python_env({'HF_HUB_OFFLINE':'1','OMP_NUM_THREADS':'1'})
+        env=engine_python_env(self.cfg['hear']['python'],{'HF_HUB_OFFLINE':'1','OMP_NUM_THREADS':'1'})
         # Discover CUDA library directories using the selected interpreter's prefix.
         prefix=command([self.cfg['hear']['python'],'-c','import sys; print(sys.prefix)'],15,env).strip()
         libs=[str(p) for kind in ('cublas','cudnn') for p in Path(prefix).glob(f'lib/python*/site-packages/nvidia/{kind}/lib')]
@@ -205,6 +205,10 @@ def speech_gaps(transcript,minimum=2.0):
     return gaps
 
 def voice_balance(file,transcript,config=None):
+    from ..workers import see_request
+    return see_request('voice_balance',{'file':str(file),'transcript':transcript},config,500)
+
+def _voice_balance(file,transcript,config=None):
     import numpy as np
     cfg=config or load(); cmd=cfg['hear']['demucs_command']; stem=None
     Path(cfg['cache_dir']).mkdir(parents=True,exist_ok=True)

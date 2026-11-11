@@ -6,11 +6,18 @@ import signal
 import subprocess
 from pathlib import Path
 from .cache import dumps
-from .util import foreign_python_env, StageError
+from .util import engine_python_env, StageError
+
+def see_request(operation, payload, config=None, timeout=300):
+    """Image/array work belongs to the configured see runtime, without loading CLIP."""
+    from .config import load
+    cfg=config or load()
+    return request(cfg['see']['python'],'crystal_ball.stage_worker',
+                   {'operation':operation,'request':{**payload,'config':cfg}},timeout)
 
 
 def request(python, module, payload, timeout=300):
-    env=foreign_python_env({'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','NUMBA_NUM_THREADS':'1','OMP_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1'})
+    env=engine_python_env(python,{'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','NUMBA_NUM_THREADS':'1','OMP_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1'})
     proc=subprocess.Popen([python,'-m',module],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,start_new_session=not bool(os.environ.get('CRYSTAL_BALL_STAGE')))
     try:
         out,err=proc.communicate(dumps(payload),timeout=timeout)

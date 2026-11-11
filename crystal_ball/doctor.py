@@ -1,13 +1,16 @@
 """Offline diagnostics. Availability is separate from live inference evidence."""
 import hashlib
+import importlib
+import importlib.util
 import os
 import shutil
 import re
 import subprocess
+import sys
 from pathlib import Path
 from .config import load
 from .senses.hear import Worker
-from .util import command, process_json, foreign_python_env, error_result
+from .util import command, process_json, engine_python_env, error_result
 
 ARABIC_SHA256='ab9d157d8e38ca00e7e39c7d5363a5239e053f5b0dbdb3167dde9d8124335896'
 
@@ -19,6 +22,16 @@ def doctor(config=None):
         failure=error_result(exc,name,cfg['cache_dir'])
         logs.append(failure['log'])
         add(name,status,(failure['error']+suffix)[:240])
+    modules={}
+    for name in ('numpy','PIL','torch','transformers'):
+        try:
+            importlib.import_module(name)
+            modules[name]='available'
+        except Exception as exc:
+            modules[name]=f'{type(exc).__name__}: {exc}'[:160]
+    add('host','PASS' if all(v=='available' for v in modules.values()) else 'WARN',
+        'host runs signal, audio orchestration and vision/judge; see runs review/contact sheet, OCR/read_text, pacing/flash/fades and voice balance; hear/rhythm/scenes use their configured engines',
+        modules=modules,python=sys.executable,see_python=cfg['see']['python'])
     for binary in ('ffmpeg','ffprobe','tesseract'):
         try:
             args=[binary,'--version' if binary=='tesseract' else '-version']
@@ -30,7 +43,7 @@ def doctor(config=None):
             failed(binary,'FAIL',exc)
     for kind in ('hear','see'):
         try:
-            env=foreign_python_env({'HF_HUB_OFFLINE':'1'})
+            env=engine_python_env(cfg[kind]['python'],{'HF_HUB_OFFLINE':'1'})
             if kind=='hear':
                 prefix=command([cfg[kind]['python'],'-c','import sys; print(sys.prefix)'],15,env).strip()
                 libs=[str(p) for name in ('cublas','cudnn') for p in Path(prefix).glob(f'lib/python*/site-packages/nvidia/{name}/lib')]
@@ -81,7 +94,6 @@ def doctor(config=None):
     judge=cfg['judge']; backend=judge['backend']; ready=False
     if backend=='hermes-auxiliary':
         try:
-            import importlib.util
             ready=importlib.util.find_spec('agent.auxiliary_client') is not None
         except (ModuleNotFoundError,ValueError):
             pass

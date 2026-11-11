@@ -41,6 +41,11 @@ def threshold_fades(means, times, threshold=12):
 
 
 def scan(file, config=None):
+    from .workers import see_request
+    return see_request('visual',{'file':str(file)},config,300)
+
+
+def _scan(file, config=None):
     cfg=config or load()
     def produce(directory):
         import numpy as np

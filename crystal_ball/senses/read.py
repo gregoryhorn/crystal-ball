@@ -89,6 +89,10 @@ def ocr_stage(req):
     return {**data,'checks':checks[:40],'boxes':data['lines'],'sampling':'full-size sampled frames; confidence >=70, >=3 alphanumeric characters and persistence required for FAIL'}
 
 def read_text(file, at=None, config=None):
+    from ..workers import see_request
+    return see_request('read_text',{'file':str(file),'at':at},config,300)
+
+def _read_text(file, at=None, config=None):
     from ..core import review_stage
     from ..frames import probe
     cfg=config or load(); file=str(Path(file).resolve()); meta=probe(file)

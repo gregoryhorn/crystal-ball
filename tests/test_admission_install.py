@@ -81,7 +81,7 @@ def test_install_tracks_created_config_preserves_changed_files(tmp_path):
     config=tmp_path/'crystal-ball.toml'
     config.write_text('# operator edit\n')
     result=tool.install(tmp_path,uninstall=True)
-    assert result['retained_modified']==['crystal-ball.toml']
+    assert result['retained_modified']==[]  # Config is user data, not modified plugin code.
     assert config.read_text()=='# operator edit\n'
 
 

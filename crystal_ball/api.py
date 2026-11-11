@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from .cache import atomic, dumps
 from .config import load
-from .util import process_json, foreign_python_env, StageError
+from .util import process_json, engine_python_env, StageError
 
 def dispatch(action='check',**params):
     cfg=load()
@@ -49,7 +49,7 @@ def dispatch(action='check',**params):
         if action=='index' and not params.get('paths'):
             raise ValueError('paths are required for index')
         req={'action':action,**params}
-        env=foreign_python_env({'HF_HUB_OFFLINE':'1'})
+        env=engine_python_env(cfg['see']['python'],{'HF_HUB_OFFLINE':'1'})
         proc=subprocess.Popen([cfg['see']['python'],'-m','crystal_ball.senses.see_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,start_new_session=True)
         import contextlib, signal, json
         try:
@@ -79,6 +79,9 @@ def compact_action(action,result,config=None):
     cfg=config or load()
     if isinstance(result,dict) and result.get('checks') and action=='transcribe':
         return result
+    if action in {'check','fix'} and 'items' in result:
+        from .core import fit_compact
+        return fit_compact(result)
     if action in {'check','fix'} and len(dumps(result).encode())<=1500:
         return result
     data=dumps(result)
@@ -105,6 +108,9 @@ def compact_action(action,result,config=None):
             summary['lines']=result.get('lines',[])[:3]
         if action=='doctor':
             summary['counts']={s:sum(c['status']==s for c in result['checks']) for s in ('PASS','WARN','FAIL')}
+            host=next((r for r in result['checks'] if r['engine']=='host'),None)
+            if host:
+                summary['host']=host
     for key in ('shots','snaps'):
         original=len(summary.get(key,[]))
         while len(dumps(summary).encode())>1500 and summary.get(key):
