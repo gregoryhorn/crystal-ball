@@ -130,7 +130,7 @@ def test_worker_timeout_kills_descendants(tmp_path):
     pidfile = tmp_path / "pid"
     code = "import subprocess,time,pathlib; p=subprocess.Popen(['sleep','30']); pathlib.Path(" + repr(str(pidfile)) + ").write_text(str(p.pid)); time.sleep(30)"
     with pytest.raises(subprocess.TimeoutExpired):
-        q.process_json([sys.executable, "-c", code], .3)
+        q.process_json([sys.executable, "-E", "-c", code], .3)
     pid = int(pidfile.read_text())
     # A reaped process or a zombie has stopped executing.
     stat = Path(f"/proc/{pid}/stat")
@@ -400,7 +400,8 @@ def test_audio_missing_is_skip(clips, tmp_path, monkeypatch):
     monkeypatch.setenv('CRYSTAL_BALL_HEAR_PYTHON',str(tmp_path/'missing-python'))
     doc=q.run_stage('audio',request(clips['good'],tmp_path/'run'))
     assert doc['checks'][0]['status']=='SKIP'
-    assert 'fallback not configured' in doc['checks'][0]['summary']
+    assert doc['checks'][0]['summary'].startswith('hear: FileNotFoundError:')
+    assert 'fallback not configured' in Path(doc['log']).read_text()
 
 
 def test_prose_is_not_a_name_misspelling():
@@ -439,7 +440,7 @@ def test_fix_does_not_drop_extra_audio_tracks(clips, tmp_path):
 
 
 def test_cli_check_json_is_parseable(clips):
-    result=subprocess.run([sys.executable,'-m','crystal_ball','check',str(clips['good']),'--platform','youtube','--json'],capture_output=True,text=True,timeout=30)
+    result=subprocess.run([sys.executable,'-E','-m','crystal_ball','check',str(clips['good']),'--platform','youtube','--json'],capture_output=True,text=True,timeout=30)
     assert result.returncode==0,result.stderr
     value=json.loads(result.stdout)
     assert value['verdict']=='WARN' and value['counts']['FAIL']==0

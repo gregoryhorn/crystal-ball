@@ -6,11 +6,13 @@ import tempfile
 from pathlib import Path
 from ..cache import Store, atomic, dumps, runtime_stamp
 from ..config import load
-from ..util import command
+from ..util import command, has_audio_stream
 
 
 def beats(file, config=None, speech_music=None):
     cfg=config or load()
+    if not has_audio_stream(file):
+        raise ValueError('no audio stream; pass --music AUDIO')
     def produce(directory):
         from ..workers import request
         cmd=cfg['hear']['demucs_command']; mixed=speech_music; speech_reason=None

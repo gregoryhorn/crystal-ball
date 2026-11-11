@@ -115,7 +115,8 @@ def test_small_area_flash_does_not_fail(tmp_path):
 
 def test_rhythm_stub_protocol_cache_and_exports(tmp_path,monkeypatch):
     from crystal_ball import workers
-    file=tmp_path/'audio.wav'; file.write_bytes(b'synthetic stub')
+    file=tmp_path/'audio.wav'
+    ffmpeg('-f','lavfi','-i','sine=d=1',file)
     calls=[]
     doc={'tempo':120,'confidence':.9,'duration':4,'beat_count':8,'beats':np.arange(0,4,.5).tolist(),'onsets':[.5,1.], 'downbeats':[0,2.], 'bars':[{'start':0},{'start':2}], 'sections':[{'start':0,'end':4}], 'engine':'librosa-cpu'}
     def request(python,module,req,timeout):
@@ -234,7 +235,8 @@ def test_check_integrates_flash_and_reuses_shots(tmp_path):
 def test_rhythm_optional_music_stem(tmp_path,monkeypatch,separation):
     from crystal_ball import workers
     from crystal_ball.senses import rhythm
-    file=tmp_path/'mix.wav'; file.write_bytes(b'synthetic mix')
+    file=tmp_path/'mix.wav'
+    ffmpeg('-f','lavfi','-i','sine=d=1',file)
     cfg=load(); cfg['hear']['demucs_command']=['stub-demucs','{input}','{output_dir}']
     sources=[]; commands=[]
     def command(args,timeout):

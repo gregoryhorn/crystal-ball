@@ -4,7 +4,7 @@ import concurrent.futures as futures
 from .config import load, rules_for
 from .cache import dumps, atomic, fingerprint, Store, runtime_stamp
 from .checks import SCRIPTS, load_qc, platforms
-from .util import row, skip, command, process_json, norm, spelling_checks, validate_checks
+from .util import row, skip, command, process_json, norm, spelling_checks, validate_checks, foreign_python_env, error_result
 from .frames import probe, caption_times, review_stage as _review_stage
 from .report import write_report
 from .senses.read import ocr_stage, confirm_safe_zones
@@ -30,13 +30,14 @@ def run_stage(stage, request, timeout=None):
     try:
         request_path=Path(request["run_dir"])/f"{stage}-request.json"
         atomic(request_path,dumps(request))
-        env={**os.environ,"OMP_THREAD_LIMIT":"1","OPENBLAS_NUM_THREADS":"1","HF_HUB_OFFLINE":"1","CRYSTAL_BALL_STAGE":"1"}
+        env=foreign_python_env({"OMP_THREAD_LIMIT":"1","OPENBLAS_NUM_THREADS":"1","HF_HUB_OFFLINE":"1","CRYSTAL_BALL_STAGE":"1"})
         value=process_json([sys.executable,"-m","crystal_ball.stage_worker",stage,request_path],timeout or TIMEOUTS[stage],env)
         if not isinstance(value,dict) or "error" in value:
             raise ValueError(str(value.get("error","invalid stage object")))
         return value
     except Exception as exc:
-        return skip(stage,f"{type(exc).__name__}: {exc}"[:240])
+        failure=error_result(exc,stage,request.get('cache_dir'))
+        return {**skip(stage,failure['error']), 'log':failure['log']}
 
 def signal_stage(req):
     qc = load_qc()
@@ -98,6 +99,9 @@ def compact(doc, cached=False):
               "inference": doc.get("inference"), "counts": counts, "items": issues,
               "not_checked": [f"{r['id']}: {r['summary']}"[:140] for r in checks if r["status"] == "SKIP"],
               "report": doc["report"], "review_frames": doc["frames_dir"]}
+    logs = sorted({stage['log'] for stage in doc.get('stages', {}).values() if stage.get('log')})
+    if logs:
+        result['log'] = logs[0]
     # Preserve the most severe findings; explicit omitted count points to full report.
     original = len(issues)
     while len(dumps(result).encode()) > MAX_BYTES and len(result["items"]) > 1:
@@ -154,7 +158,8 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
         run_dir = entry / uuid.uuid4().hex[:10]
         frames_dir = run_dir / "frames"
         frames_dir.mkdir(parents=True)
-        stage = skip("probe", f"{type(exc).__name__}: {exc}"[:240])
+        failure=error_result(exc,'probe',cfg['cache_dir'])
+        stage = {**skip('probe',failure['error']), 'log':failure['log']}
         doc = {"version": VERSION, "file": str(path), "identity": identity, "platform": platform or "unknown",
                "inference": "unavailable: could not probe the video", "checks": stage["checks"],
                "stages": {"probe": stage}, "frames_dir": str(frames_dir)}

@@ -1,6 +1,53 @@
 import contextlib, csv, difflib, hashlib, io, json, math, os, re, signal, subprocess, sys, tempfile, time, uuid
 from pathlib import Path
 from .cache import dumps, atomic, fingerprint
+import traceback
+
+def foreign_python_env(extra=None):
+    """Give an engine its own stdlib and only our package import root."""
+    env = {**os.environ, **(extra or {})}
+    for key in ('PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'PYTHONUSERBASE',
+                'PYTHONEXECUTABLE', 'VIRTUAL_ENV', '__PYVENV_LAUNCHER__',
+                'PYTHONSAFEPATH', 'CONDA_PREFIX'):
+        env.pop(key, None)
+    env['PYTHONNOUSERSITE'] = '1'
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
+    return env
+
+class StageError(RuntimeError):
+    def __init__(self, stage, detail, log=None, summary=None):
+        super().__init__(''.join(traceback.format_exception(detail)) if isinstance(detail, BaseException) else detail)
+        self.stage = stage
+        self.log = log
+        self.summary = summary
+
+def error_summary(exc, stage):
+    if isinstance(exc, StageError) and exc.summary:
+        return exc.summary[:240]
+    if isinstance(exc, StageError):
+        detail = str(exc).strip().splitlines()
+        exceptions = [line for line in detail if re.match(r'^[A-Za-z_][\w.]*:', line)]
+        final = exceptions[-1] if exceptions else f'RuntimeError: {detail[-1] if detail else "worker failed"}'
+    else:
+        final = f'{type(exc).__name__}: {exc}'
+    final = ' '.join(final.split())
+    return f'{getattr(exc, "stage", stage)}: {final}'[:240]
+
+def error_result(exc, stage, cache_dir=None):
+    """Keep compact failures in responses and complete tracebacks on disk."""
+    if cache_dir is None:
+        from .config import load
+        try:
+            cache_dir = load()['cache_dir']
+        except Exception:
+            cache_dir = os.environ.get('CRYSTAL_BALL_CACHE_DIR', '~/.cache/crystal-ball')
+    path = Path(cache_dir).expanduser() / 'errors.log'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a', encoding='utf-8') as log:
+        log.write(f'\nStage: {getattr(exc, "stage", stage)}\n')
+        log.write(''.join(traceback.format_exception(exc)))
+    return {'status': 'error', 'stage': getattr(exc, 'stage', stage),
+            'error': error_summary(exc, stage), 'log': str(path)}
 STATUSES = {"PASS", "WARN", "FAIL", "SKIP"}
 def row(id, status, summary, timestamps=None, fix=""):
     return {"id": str(id), "status": status, "summary": str(summary),
@@ -9,12 +56,17 @@ def row(id, status, summary, timestamps=None, fix=""):
 def skip(stage, reason):
     return {"checks": [row(stage, "SKIP", reason)]}
 
+def has_audio_stream(file, meta=None):
+    if meta is None:
+        meta = json.loads(command(['ffprobe', '-v', 'error', '-show_streams', '-of', 'json', file], 15))
+    return any(stream.get('codec_type') == 'audio' for stream in meta['streams'])
+
 def command(cmd, timeout=60, env=None):
     """Kill the whole stage's descendants at the outer deadline as well."""
     proc = subprocess.run([str(x) for x in cmd], capture_output=True, text=True,
                           timeout=timeout, env=env)
     if proc.returncode:
-        raise RuntimeError((proc.stderr or proc.stdout or f"exit {proc.returncode}")[-500:])
+        raise StageError(Path(str(cmd[0])).name, proc.stderr or proc.stdout or f"exit {proc.returncode}")
     return proc.stdout
 
 def process_json(cmd, timeout, env=None):
@@ -29,10 +81,12 @@ def process_json(cmd, timeout, env=None):
         raise
     if proc.returncode:
         try:
-            detail=json.loads(out).get('error')
+            failure=json.loads(out)
+            detail=failure.get('error')
         except (ValueError,AttributeError):
-            detail=None
-        raise RuntimeError((detail or err or out or f"exit {proc.returncode}")[-400:])
+            failure={}; detail=None
+        raise StageError(failure.get('stage', str(cmd[3]) if len(cmd)>3 else str(cmd[0])),
+                         err or out or f"exit {proc.returncode}", failure.get('log'), detail)
     return json.loads(out)
 
 def norm(text):

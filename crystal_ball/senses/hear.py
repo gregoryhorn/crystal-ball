@@ -15,20 +15,24 @@ import unicodedata
 from pathlib import Path
 from ..cache import Store, dumps, runtime_stamp
 from ..config import load
-from ..util import command, row
+from ..util import command, row, skip, foreign_python_env, has_audio_stream, StageError, error_result, error_summary
 
 class Worker:
     def __init__(self, config=None):
         self.cfg=config or load(); self.proc=None; self.lock=threading.Lock(); self.counter=0
     def start(self):
-        env={**os.environ,'HF_HUB_OFFLINE':'1','OMP_NUM_THREADS':'1'}
+        env=foreign_python_env({'HF_HUB_OFFLINE':'1','OMP_NUM_THREADS':'1'})
         # Discover CUDA library directories using the selected interpreter's prefix.
-        prefix=command([self.cfg['hear']['python'],'-c','import sys; print(sys.prefix)'],15).strip()
+        prefix=command([self.cfg['hear']['python'],'-c','import sys; print(sys.prefix)'],15,env).strip()
         libs=[str(p) for kind in ('cublas','cudnn') for p in Path(prefix).glob(f'lib/python*/site-packages/nvidia/{kind}/lib')]
         env['LD_LIBRARY_PATH']=os.pathsep.join(libs+([env['LD_LIBRARY_PATH']] if env.get('LD_LIBRARY_PATH') else []))
         # The source checkout is importable even before the user installs the package.
-        env['PYTHONPATH']=str(Path(__file__).resolve().parents[2])+os.pathsep+env.get('PYTHONPATH','')
-        self.proc=subprocess.Popen([self.cfg['hear']['python'],'-u','-m','crystal_ball.senses.hear_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,env=env,start_new_session=not bool(os.environ.get('CRYSTAL_BALL_STAGE')))
+        self.stderr=tempfile.TemporaryFile(mode='w+t')
+        try:
+            self.proc=subprocess.Popen([self.cfg['hear']['python'],'-u','-m','crystal_ball.senses.hear_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.stderr,text=True,env=env,start_new_session=not bool(os.environ.get('CRYSTAL_BALL_STAGE')))
+        except BaseException:
+            self.stderr.close()
+            raise
     def transcribe(self,file,timeout=300):
         with self.lock:
             if self.proc is None:
@@ -42,11 +46,14 @@ class Worker:
                     if not selector.select(timeout):
                         raise TimeoutError('hear worker timed out')
                     line=self.proc.stdout.readline()
+                if not line:
+                    self.stderr.seek(0)
+                    raise StageError('hear', self.stderr.read() or 'hear worker exited without a response')
                 response=json.loads(line)
                 if response.get('id')!=self.counter:
                     raise ValueError('hear response ID mismatch')
                 if 'error' in response:
-                    raise RuntimeError(response['error'])
+                    raise StageError('hear',response['error'],response.get('log'),response['error'])
                 return validate_transcript(response['result'])
             except BaseException:
                 self.close()
@@ -56,6 +63,7 @@ class Worker:
             with contextlib.suppress(ProcessLookupError):
                 (os.kill if os.environ.get('CRYSTAL_BALL_STAGE') else os.killpg)(self.proc.pid,signal.SIGKILL)
             self.proc.communicate(); self.proc=None
+            self.stderr.close()
     def __enter__(self):
         return self
     def __exit__(self,*args):
@@ -103,6 +111,8 @@ def whispercpp(file,cfg):
 
 def transcribe(file,config=None,worker=None):
     cfg=config or load(); Path(cfg['cache_dir']).mkdir(parents=True,exist_ok=True)
+    if not has_audio_stream(file):
+        return skip('audio', 'no audio stream')
     def produce(directory):
         try:
             if worker:
@@ -113,8 +123,9 @@ def transcribe(file,config=None,worker=None):
             try:
                 result=whispercpp(file,cfg)
             except Exception as fallback:
-                raise RuntimeError(f'hear engine failed: {str(exc)[:160]}; fallback failed: {str(fallback)[:160]}') from None
-            result['fallback_reason']=str(exc)[:200]
+                error_result(exc, 'hear', cfg['cache_dir'])
+                raise StageError('hear', exc) from fallback
+            result['fallback_reason']=error_summary(exc,'hear')
             return result
     return Store(cfg['cache_dir']).get(file,'transcript',{'hear':cfg['hear'],'whispercpp':cfg['whispercpp'],'runtime':runtime_stamp(cfg),'version':1},produce)
 
@@ -220,6 +231,8 @@ def voice_balance(file,transcript,config=None):
 
 def audio_stage(req):
     cfg=req.get('config') or load()
+    if not has_audio_stream(req['file'], req.get('meta')):
+        return skip('audio', 'no audio stream')
     with Worker(cfg) as worker:
         transcript=transcribe(req['file'],cfg,worker)
     checks=[row('transcript','PASS',f"{len(transcript['segments'])} speech segments ({transcript['engine']})")]
@@ -235,7 +248,9 @@ def audio_stage(req):
         details['voice_balance']=balance
         checks.append(row('voice_balance','WARN' if balance['method'].startswith('estimate') else 'PASS',balance['method']))
     except Exception as exc:
-        checks.append(row('voice_balance','SKIP',str(exc)[:180]))
+        failure=error_result(exc,'voice_balance',cfg['cache_dir'])
+        checks.append(row('voice_balance','SKIP',failure['error']))
+        details['log']=failure['log']
     return {'checks':checks,'transcript':transcript,**details}
 
 def subtitles(doc,kind='srt'):

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from .cache import atomic, dumps
 from .config import load
-from .util import process_json
+from .util import process_json, foreign_python_env, StageError
 
 def dispatch(action='check',**params):
     cfg=load()
@@ -32,9 +32,9 @@ def dispatch(action='check',**params):
                 directory=exports or str(Path(result['paths']['json']).parent/'exports')
                 result['paths']={**result['paths'],**scenes.export(result,directory)}
         else:
-            shots=scenes.detect_scenes(file,cfg)
             music=str(Path(params.get('music') or file).expanduser().resolve())
             beat_doc=rhythm.beats(music,cfg)
+            shots=scenes.detect_scenes(file,cfg)
             aligned=alignment(shots['shots'],beat_doc,params['fps'] if params.get('fps') is not None else shots['fps'],params.get('within_frames',6))
             result={'shot_count':shots['shot_count'],'beat_count':beat_doc['beat_count'],'tempo':beat_doc['tempo'],'scenes':shots,'rhythm':beat_doc,**aligned,
                     'paths':{'scenes':shots['paths']['json'],'beats':beat_doc['paths']['json']}}
@@ -49,7 +49,7 @@ def dispatch(action='check',**params):
         if action=='index' and not params.get('paths'):
             raise ValueError('paths are required for index')
         req={'action':action,**params}
-        env={**os.environ,'HF_HUB_OFFLINE':'1','PYTHONPATH':str(Path(__file__).resolve().parent.parent)+os.pathsep+os.environ.get('PYTHONPATH','')}
+        env=foreign_python_env({'HF_HUB_OFFLINE':'1'})
         proc=subprocess.Popen([cfg['see']['python'],'-m','crystal_ball.senses.see_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,start_new_session=True)
         import contextlib, signal, json
         try:
@@ -59,7 +59,7 @@ def dispatch(action='check',**params):
                 os.killpg(proc.pid,signal.SIGKILL)
             proc.communicate(); raise
         if proc.returncode:
-            raise RuntimeError((err or out)[-400:])
+            raise StageError('see', err or out)
         return json.loads(out)
     if action=='read_text':
         from .senses.read import read_text
@@ -77,6 +77,8 @@ def compact_action(action,result,config=None):
     """Keep full data in an artifact; bound every tool response in UTF-8 bytes."""
     import hashlib
     cfg=config or load()
+    if isinstance(result,dict) and result.get('checks') and action=='transcribe':
+        return result
     if action in {'check','fix'} and len(dumps(result).encode())<=1500:
         return result
     data=dumps(result)
@@ -84,7 +86,7 @@ def compact_action(action,result,config=None):
     atomic(path,data)
     summary={'action':action,'artifact':str(path)}
     if isinstance(result,dict):
-        for key in ('verdict','status','report','counts','code','engine','fallback_reason'):
+        for key in ('verdict','status','report','counts','code','engine','fallback_reason','log'):
             if key in result:
                 summary[key]=result[key]
         if action=='beats':

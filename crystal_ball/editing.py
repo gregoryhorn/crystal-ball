@@ -76,16 +76,21 @@ def edit_stage(req):
     from .senses.scenes import detect_scenes
     from .senses.rhythm import beats
     from .visual import scan
+    from .util import error_result
     cfg=req.get('config') or load(); checks=[]; details={}
+    def failed(stage, exc):
+        failure=error_result(exc,stage,cfg['cache_dir'])
+        checks.append(row(stage,'SKIP',failure['error']))
+        details['log']=failure['log']
     try:
         shots=detect_scenes(req['file'],cfg); details['scenes']=shots
     except Exception as exc:
-        shots=None; checks.append(row('pacing','SKIP',str(exc)[-200:]))
+        shots=None; failed('pacing',exc)
     try:
         visual=scan(req['file'],cfg)
         safety=flash(visual); checks+=safety['checks']; details['flash']=safety
     except Exception as exc:
-        visual={}; checks.append(row('flash','SKIP',str(exc)[-200:]))
+        visual={}; failed('flash',exc)
     if shots:
         checks.append(pacing(shots['shots'],req['platform'],visual.get('visual_changes',[])))
     import re
@@ -97,5 +102,5 @@ def edit_stage(req):
             aligned=alignment(shots['shots'],rhythm,shots['fps'])
             checks.append(cut_sync(aligned)); details['rhythm']=rhythm; details['cut_sync']=aligned
         except Exception as exc:
-            checks.append(row('cut_sync','SKIP',str(exc)[-200:]))
+            failed('cut_sync',exc)
     return {'checks':checks,**details}

@@ -4,6 +4,7 @@ import importlib
 import json
 import subprocess
 import sys
+from ..util import error_result
 
 class Engine:
     def __init__(self):
@@ -49,7 +50,7 @@ def serve(engine=None, source=None, sink=None):
                 value=engine.transcribe(req)
             response={'id':req.get('id'),'result':value}
         except Exception as exc:
-            response={'id':req.get('id') if isinstance(locals().get('req'),dict) else None,'error':f'{type(exc).__name__}: {exc}'[:400]}
+            response={'id':req.get('id') if isinstance(locals().get('req'),dict) else None,**error_result(exc,'hear')}
         sink.write(json.dumps(response,ensure_ascii=False,allow_nan=False)+'\n'); sink.flush()
 
 if __name__=='__main__':

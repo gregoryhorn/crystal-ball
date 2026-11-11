@@ -69,7 +69,7 @@ assert sys.path==before
 import crystal_ball
 assert '_vendor' in crystal_ball.__file__
 '''
-    subprocess.run([sys.executable,'-B','-c',code,str(plugin/'__init__.py')],cwd=tmp_path,check=True,capture_output=True)
+    subprocess.run([sys.executable,'-E','-B','-c',code,str(plugin/'__init__.py')],cwd=tmp_path,check=True,capture_output=True)
     assert tool.install(home)['status']=='installed'
     assert tool.install(home,uninstall=True)['retained_modified']==[]
     assert not plugin.exists() and not (home/'skills/crystal-ball').exists()

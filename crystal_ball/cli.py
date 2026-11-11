@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from .api import dispatch, compact_action
 from .cache import dumps, atomic
+from .util import error_result
 
 def parser():
     ap=argparse.ArgumentParser(prog='crystal-ball',description='Four media senses. Evidence, not creative approval.')
@@ -59,6 +60,8 @@ def main(argv=None):
             out=args.pop('output'); kind='srt' if args.pop('srt') else 'vtt' if args.get('vtt') else 'json'
             args.pop('vtt'); args.pop('json')
             result=dispatch(action,**args)
+            if result.get('checks'):
+                print(dumps(result)); return 0
             from .senses.hear import subtitles
             atomic(out,subtitles(result,kind) if kind!='json' else json.dumps(result,ensure_ascii=False,indent=2))
             print(dumps({'status':'written','file':out,'engine':result['engine'],'fallback_reason':result.get('fallback_reason')})); return 0
@@ -80,6 +83,6 @@ def main(argv=None):
             print(dumps(compact_action(action,result) if action in {'beats','scenes','cuts'} else result))
         return int(result.get('verdict')=='FAIL' or action=='doctor' and any(r['status']=='FAIL' for r in result['checks']) or result.get('code',0)!=0)
     except Exception as exc:
-        print(dumps({'error':str(exc)[-400:]}),file=sys.stderr); return 2
+        print(dumps(error_result(exc,action)),file=sys.stderr); return 2
 if __name__=='__main__':
     sys.exit(main())

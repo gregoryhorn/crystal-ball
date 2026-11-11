@@ -9,7 +9,7 @@ from .cache import fingerprint
 from .config import load
 from .checks import platforms
 from .frames import probe
-from .util import command
+from .util import command, error_result
 
 def protected(path,patterns):
     p=Path(path).resolve().as_posix()
@@ -61,4 +61,5 @@ def apply_fix(doc,force=False,config=None):
             os.link(target,output)
         return {'status':'written','file':str(output),'commands':[first,cmd]}
     except Exception as exc:
-        return {'status':'failed','reason':str(exc)[-200:]}
+        failure=error_result(exc,'fix',cfg['cache_dir'])
+        return {'status':'failed','reason':failure['error'],'log':failure['log']}

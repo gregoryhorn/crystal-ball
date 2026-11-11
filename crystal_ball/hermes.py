@@ -9,6 +9,7 @@ from pathlib import Path
 from .cache import dumps
 from .config import load
 from .hooks import Hooks
+from .util import error_result, StageError, foreign_python_env
 
 ACTIONS=['check','transcribe','find','index','read_text','fix','doctor','beats','scenes','cuts']
 
@@ -25,7 +26,7 @@ def profile_config():
     return str(candidate) if candidate.is_file() else None
 
 def invoke(action,**params):
-    env={**os.environ,'HF_HUB_OFFLINE':'1'}
+    env=foreign_python_env({'HF_HUB_OFFLINE':'1'})
     config=profile_config()
     if config:
         env['CRYSTAL_BALL_CONFIG']=config
@@ -38,7 +39,7 @@ def invoke(action,**params):
             os.killpg(proc.pid,signal.SIGKILL)
         proc.communicate(); raise
     if proc.returncode:
-        raise RuntimeError((err or out)[-300:])
+        raise StageError('tool',err or out)
     result=json.loads(out)
     if len(dumps(result).encode())>1500:
         raise ValueError('tool response exceeds compact budget')
@@ -47,6 +48,7 @@ def invoke(action,**params):
 def register(ctx):
     hooks=Hooks(check=lambda **kw: invoke('check',**kw),config_loader=lambda:load(profile_config()))
     def handle(params,**kwargs):
+        action='tool'
         try:
             params=dict(params); action=params.pop('action')
             if action not in ACTIONS:
@@ -59,7 +61,7 @@ def register(ctx):
                 hooks.acknowledge(kwargs.get('session_id',''),file,result)
             return dumps(result)
         except Exception as exc:
-            return dumps({'status':'error','error':str(exc)[:220]})
+            return dumps(error_result(exc,action))
     props={
         'action':{'type':'string','enum':ACTIONS},
         'file':{'type':'string','description':'Media path'},

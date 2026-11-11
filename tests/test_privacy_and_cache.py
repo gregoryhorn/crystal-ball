@@ -30,7 +30,7 @@ def produce(directory):
     return {"value":value}
 print(Store(cache).get(source,"test",{},produce))
 '''
-    procs=[subprocess.Popen([sys.executable,'-c',code,str(file),str(tmp_path/'cache'),str(counter)],stdout=subprocess.PIPE,text=True) for _ in range(3)]
+    procs=[subprocess.Popen([sys.executable,'-E','-c',code,str(file),str(tmp_path/'cache'),str(counter)],stdout=subprocess.PIPE,text=True) for _ in range(3)]
     results=[p.communicate(timeout=10)[0] for p in procs]
     assert all(p.returncode==0 for p in procs)
     assert counter.read_text()=='1' and len(set(results))==1
