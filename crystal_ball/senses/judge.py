@@ -19,7 +19,9 @@ def vision_stage(req):
     if not review.get('contact_sheet'):
         return skip('vision','contact sheet unavailable')
     frames=review['frames']
-    selected=[frames[round(i*(len(frames)-1)/max(1,min(4,len(frames))-1))] for i in range(min(4,len(frames)))]
+    cut_frames=[f for f in frames if f.get('at_cut')]
+    candidates=cut_frames or frames
+    selected=[candidates[round(i*(len(candidates)-1)/max(1,min(4,len(candidates))-1))] for i in range(min(4,len(candidates)))]
     rules=req['rules']['active'].encode()[:2048].decode(errors='ignore')
     parts=[{'type':'text','text':CRITIQUE+'\nBrief: '+(req.get('brief') or '')[:1000]+'\nRules (context only):\n'+rules}]
     for label,path in [('Timestamped contact sheet',review['contact_sheet'])]+[(f"Frame {f['time']}s",f['path']) for f in selected]:

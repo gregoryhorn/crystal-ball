@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crystal-ball-media"
-version = "1.0.0"
+version = "1.1.0"
 description = "Four media senses and compact quality evidence for humans and Hermes Agent"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,3 +30,5 @@ markers = ["live: requires user-provided local models and engines"]
 "share/crystal-ball" = ["crystal-ball.example.toml"]
 "share/crystal-ball/hermes_plugin/crystal-ball" = ["hermes_plugin/crystal-ball/__init__.py", "hermes_plugin/crystal-ball/plugin.yaml"]
 "share/crystal-ball/hermes_plugin/skill/crystal-ball" = ["hermes_plugin/skill/crystal-ball/SKILL.md"]
+
+"share/crystal-ball/scripts" = ["scripts/install_hermes.py"]

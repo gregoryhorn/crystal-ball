@@ -48,25 +48,55 @@ def collect(paths):
     return out
 
 
+ENGINE_INFO={}
+
+
 def device():
     import torch
-    if torch.cuda.is_available():
-        free = torch.cuda.mem_get_info()[0] / 2**20
-        if free >= MIN_FREE_MB:
-            return "cuda"
-        log(f"GPU has only {free:.0f} MiB free; using CPU")
-    return "cpu"
+    from ..gpu import admit
+    dev,reason=admit(load()['see']['min_free_vram_gb'],torch)
+    ENGINE_INFO.update(engine='clip-'+dev,fallback_reason=reason)
+    return dev
 
 
 def load_model(name):
     import torch
     from transformers import CLIPModel, CLIPProcessor
+    from ..gpu import is_oom
+    torch.set_num_threads(load()['see']['cpu_threads'])
     dev = device()
     mid = model_id(name)
-    model = CLIPModel.from_pretrained(mid, local_files_only=True, torch_dtype=torch.float16 if dev == "cuda" else torch.float32).to(dev).eval()
+    try:
+        model = CLIPModel.from_pretrained(mid, local_files_only=True, torch_dtype=torch.float16 if dev == 'cuda' else torch.float32).to(dev).eval()
+    except Exception as exc:
+        if dev!='cuda' or not is_oom(exc):
+            raise
+        torch.cuda.empty_cache()
+        dev='cpu'
+        ENGINE_INFO.update(engine='clip-cpu',fallback_reason='CUDA out of memory at load; retry on CPU')
+        model=CLIPModel.from_pretrained(mid,local_files_only=True,torch_dtype=torch.float32).eval()
     return model, CLIPProcessor.from_pretrained(mid, local_files_only=True), dev
 
 
+def cpu_retry(fn):
+    """Retry a failed CUDA inference once, retaining the model on CPU afterwards."""
+    def wrapped(model,proc,dev,*args,**kwargs):
+        from ..gpu import is_oom
+        if str(getattr(model,'device',''))=='cpu':
+            dev='cpu'
+        try:
+            return fn(model,proc,dev,*args,**kwargs)
+        except Exception as exc:
+            if dev!='cuda' or not is_oom(exc):
+                raise
+            model.to('cpu').float()
+            import torch
+            torch.cuda.empty_cache()
+            ENGINE_INFO.update(engine='clip-cpu',fallback_reason='CUDA out of memory at inference; retry on CPU')
+            return fn(model,proc,'cpu',*args,**kwargs)
+    return wrapped
+
+@cpu_retry
 def embed_images(model, proc, dev, paths, bs=32):
     import torch
     from PIL import Image
@@ -87,6 +117,7 @@ def embed_images(model, proc, dev, paths, bs=32):
     return np.concatenate([o.numpy() for o in outs]) if outs else np.zeros((0, model.config.projection_dim), "float32")
 
 
+@cpu_retry
 def embed_text(model, proc, dev, text):
     import torch
     t = proc(text=[text], return_tensors="pt", padding=True, truncation=True, max_length=77).to(dev)
@@ -198,6 +229,7 @@ def cmd_index(a):
                         log("  cannot stat file", f, ex)
                         continue
                     if fingerprint(f) == e.get("identity") \
+                            and e.get("sampling_options") == getattr(a,"sampling_options",None) \
                             and e.get("every") == a.every and e.get("mode") == a.mode and e.get("cap") == a.cap:
                         entries[f] = e
             for i, fr in enumerate(old["frames"]):
@@ -272,11 +304,10 @@ def index_file(f, a, tdir, model, proc, dev):
                 return None
             pairs = [(0.0, os.path.join(tmp, "f_00000.jpg"))]
         else:
-            if getattr(a, "shared", False):
-                from ..core import review_stage
-                from ..frames import probe
-                review=review_stage({"file":f,"meta":probe(f),"cache_dir":load()["cache_dir"]})
-                pairs=[(fr["time"],fr["path"]) for fr in review["frames"]]
+            if a.mode=='shot':
+                from .scenes import detect_scenes, shot_frames
+                cfg=load()
+                pairs=shot_frames(detect_scenes(f,cfg),getattr(a,'frames_per_shot',1),cfg)
             else:
                 pairs = extract(f, tmp, a.every, a.cap, a.mode)
         if not pairs:
@@ -303,7 +334,7 @@ def index_file(f, a, tdir, model, proc, dev):
         if fingerprint(f) != identity:
             raise OSError("source changed during indexing")
         entry = {"identity": identity, "mtime_ns": st.st_mtime_ns, "size": st.st_size, "every": a.every,
-                 "mode": a.mode, "cap": a.cap, "frames": len(pairs), "thumb_hash": h}
+                 "mode": a.mode, "cap": a.cap, "sampling_options":getattr(a,"sampling_options",None), "frames": len(pairs), "thumb_hash": h}
         return frames, e, entry, (model, proc, dev)
 
 

@@ -40,6 +40,10 @@ models and endpoint services before distributing them.
 
 | Component | Licence | Distribution here |
 |---|---|---|
+| librosa 1.0.0 | ISC | Separately installed rhythm runtime; not bundled |
+| PySceneDetect 0.7.2 | BSD-3-Clause | Separately installed scenes runtime; not bundled |
+| SciPy | BSD-3-Clause | librosa runtime dependency; not bundled |
+| OpenCV | Apache-2.0 (check selected distribution) | PySceneDetect runtime dependency; not bundled |
 | faster-whisper | MIT | Requirement only |
 | OpenAI Whisper weights, including large-v3-turbo | MIT | Not bundled |
 | CTranslate2 | MIT | Requirement only |

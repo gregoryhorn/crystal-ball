@@ -98,6 +98,13 @@ def runtime_stamp(config):
             paths.add(model)
         elif model.is_dir():
             paths.update(p for p in model.iterdir() if p.is_file())
+    for section in ('rhythm','scenes'):
+        exe=shutil.which(config.get(section,{}).get('python',''))
+        if exe:
+            paths.add(Path(exe))
+            for p in (Path(exe).parent.parent).glob('lib/python*/site-packages/*.dist-info/METADATA'):
+                if p.parent.name.startswith(('librosa-','scenedetect-')):
+                    paths.add(p)
     wc=config['whispercpp']
     if wc['bin'] and shutil.which(wc['bin']):
         paths.add(Path(shutil.which(wc['bin'])))

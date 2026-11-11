@@ -6,6 +6,8 @@ cache_dir = "~/.cache/crystal-ball"
 python = ".venv-hear/bin/python"
 model = "large-v3-turbo"
 device = "cuda" # use "cpu" for int8 CPU inference
+min_free_vram_gb = 3.5 # admission before model load; OOM retries once on CPU
+cpu_threads = 4
 # Optional argv command; no shell. Must produce a vocals.wav below output_dir.
 demucs_command = []
 # demucs_command = ["demucs", "--two-stems", "vocals", "-o", "{output_dir}", "{input}"]
@@ -17,6 +19,17 @@ model = "" # local ggml model file
 [see]
 python = ".venv-see/bin/python"
 model = "openai/clip-vit-large-patch14" # or a local model directory
+min_free_vram_gb = 2.5
+cpu_threads = 4
+
+[rhythm]
+python = ".venv-rhythm/bin/python" # local librosa 1.0.0; CPU only
+
+[scenes]
+python = ".venv-scenes/bin/python" # local PySceneDetect 0.7.2; ffmpeg fallback
+detector = "content" # content | adaptive
+threshold = 27.0 # content score; use e.g. 3.0 for adaptive ratio
+min_shot_s = 0.3
 
 [read]
 tessdata = "" # empty uses Tesseract's installed data; otherwise a directory

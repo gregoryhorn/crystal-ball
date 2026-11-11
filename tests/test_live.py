@@ -12,7 +12,7 @@ def ffmpeg(*args):
     subprocess.run(['ffmpeg','-nostdin','-v','error',*map(str,args)],capture_output=True,check=True,timeout=60)
 
 
-def test_live_hear_cuda_and_cached_word_timestamps(tmp_path):
+def test_live_hear_engine_and_cached_word_timestamps(tmp_path):
     from crystal_ball.senses.hear import Worker, transcribe
     cfg=load(); cfg['cache_dir']=str(tmp_path/'cache')
     if 'flite' not in subprocess.run(['ffmpeg','-hide_banner','-filters'],capture_output=True,text=True).stdout:
@@ -21,12 +21,17 @@ def test_live_hear_cuda_and_cached_word_timestamps(tmp_path):
     ffmpeg('-f','lavfi','-i','flite=text=Welcome to a bright new day:voice=slt','-ar','16000',file)
     with Worker(cfg) as worker:
         result=transcribe(str(file),cfg,worker)
-        assert result['engine']=='faster-whisper'
+        assert result['engine'] in {'faster-whisper-cuda','faster-whisper-cpu','whisper.cpp'}
+        assert 'fallback_reason' in result
+        if result['engine']!='faster-whisper-cuda' and cfg['hear']['device']=='cuda':
+            assert result['fallback_reason']
         assert result['text'] and any(s['words'] for s in result['segments'])
-        pid=worker.proc.pid
-        result2=worker.transcribe(str(file))
-        assert worker.proc.pid==pid and result2['text']
+        if result['engine'].startswith('faster-whisper'):
+            pid=worker.proc.pid
+            result2=worker.transcribe(str(file))
+            assert worker.proc.pid==pid and result2['text']
         assert transcribe(str(file),cfg,worker)==result
+
 
 
 def test_live_clip_index_text_image_and_atomic_reuse(tmp_path,monkeypatch):
@@ -65,3 +70,58 @@ def test_live_whispercpp_fallback(tmp_path):
     file=tmp_path/'tone.wav'; ffmpeg('-f','lavfi','-i','sine=f=440:d=1',file)
     result=whispercpp(str(file),cfg)
     assert result['engine']=='whisper.cpp' and isinstance(result['segments'],list)
+
+
+def test_live_rhythm_click_120_bpm(tmp_path,monkeypatch):
+    import numpy as np
+    from crystal_ball.senses.rhythm import beats
+    cfg=load(); cfg['cache_dir']=str(tmp_path/'cache')
+    monkeypatch.setenv('NUMBA_CACHE_DIR',str(tmp_path/'numba'))
+    file=tmp_path/'click.wav'
+    ffmpeg('-f','lavfi','-i',r'aevalsrc=if(lt(mod(t\,0.5)\,0.012)\,0.8*sin(2*PI*1000*t)\,0):s=22050:d=12',file)
+    result=beats(str(file),cfg)
+    assert result['engine']=='librosa-cpu'
+    assert abs(result['tempo']-120)<=2
+    assert len(result['beats'])>=20
+    assert np.allclose(np.diff(result['beats']),.5,atol=.020)
+    assert 0<=result['confidence']<=1 and result['bars'] and result['downbeats']
+    assert 'estimate' in result['meter'] and 'estimate' in result['sections_method']
+
+
+@pytest.mark.parametrize('detector,threshold',[('content',27.),('adaptive',3.)])
+def test_live_pyscenedetect_cuts_and_fade(tmp_path,detector,threshold):
+    from crystal_ball.senses.scenes import detect_scenes
+    cfg=load(); cfg['cache_dir']=str(tmp_path/'cache')
+    cfg['scenes'].update(detector=detector,threshold=threshold)
+    file=tmp_path/'cards.mp4'
+    ffmpeg('-f','lavfi','-i','color=red:s=160x90:r=25:d=2',
+           '-f','lavfi','-i','color=blue:s=160x90:r=25:d=2,fade=t=out:st=1.5:d=0.5',
+           '-f','lavfi','-i','color=green:s=160x90:r=25:d=2,fade=t=in:st=0:d=0.5',
+           '-filter_complex','[0:v][1:v][2:v]concat=n=3:v=1:a=0','-c:v','libx264','-crf','0','-threads','1',file)
+    result=detect_scenes(str(file),cfg)
+    assert result['engine']=='pyscenedetect',result['fallback_reason']
+    assert any(s['cut_type']=='hard cut' and abs(s['start']-2)<=1/25 for s in result['shots'])
+    assert any(s['cut_type']=='fade' and abs(s['start']-4)<=.20 for s in result['shots'])
+    assert result['threshold_crossings']
+
+
+def test_live_cut_sync_synthetic_edits(tmp_path,monkeypatch):
+    from crystal_ball.editing import alignment,cut_sync
+    from crystal_ball.senses.scenes import detect_scenes
+    from crystal_ball.senses.rhythm import beats
+    cfg=load(); cfg['cache_dir']=str(tmp_path/'cache')
+    monkeypatch.setenv('NUMBA_CACHE_DIR',str(tmp_path/'numba'))
+    audio=tmp_path/'click.wav'
+    ffmpeg('-f','lavfi','-i',r'aevalsrc=if(lt(mod(t\,0.5)\,0.012)\,0.8*sin(2*PI*1000*t)\,0):s=22050:d=8',audio)
+    rhythm=beats(str(audio),cfg)
+    for cut,expected in [(2.,'PASS'),(2.2,'WARN')]:
+        file=tmp_path/f'edit-{cut}.mp4'
+        ffmpeg('-f','lavfi','-i',f'color=red:s=160x90:r=25:d={cut}',
+               '-f','lavfi','-i',f'color=blue:s=160x90:r=25:d={4-cut}',
+               '-i',audio,'-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v]',
+               '-map','[v]','-map','2:a','-shortest','-threads','1',file)
+        shot_doc=detect_scenes(str(file),cfg)
+        aligned=alignment(shot_doc['shots'],rhythm,shot_doc['fps'],6)
+        assert cut_sync(aligned)['status']==expected
+        if expected=='WARN':
+            assert aligned['snaps'] and '->' in cut_sync(aligned)['fix']

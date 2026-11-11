@@ -13,8 +13,8 @@ human decision; they do not grant creative or delivery approval.
 
 | Sense | What it provides |
 |---|---|
-| **Hear** | Local faster-whisper ASR with word timestamps, normalized script WER, missing/changed lines and names, speech gaps and voice-balance measurements. Optional whisper.cpp fallback. |
-| **See** | Incremental CLIP frame indexing; text or image search; atomic index generations; an odd-shot-out Python helper. |
+| **Hear** | Local faster-whisper ASR with word timestamps, normalized script WER, missing/changed lines and names, speech gaps and voice-balance measurements. CPU int8 admission/OOM fallback before whisper.cpp. Beat/onset detection, estimated 4/4 bars and novelty sections. |
+| **See** | Incremental CLIP frame indexing; text or image search; atomic index generations; an odd-shot-out Python helper. Cached shot boundaries, thumbnails and labelled fades. |
 | **Read** | Full-size sampled OCR, line grouping, spelling hints and safe-zone evidence, including optional Arabic traineddata. |
 | **Judge** | One optional vision call with a contact sheet and up to four full frames, a fixed evidence prompt, brief and at most 2 KB of Markdown rules. |
 
@@ -48,7 +48,13 @@ not a filename: this bypasses incompatible PyAV decoders. Its persistent JSON
 worker loads each model once and can transcribe multiple files in one run.
 The launcher discovers `nvidia/cublas/lib` and `nvidia/cudnn/lib` inside the
 configured interpreter's prefix and prepends them to `LD_LIBRARY_PATH`.
-CPU mode uses int8; CUDA uses float16. The whisper.cpp fallback uses a private
+CPU mode uses int8; CUDA uses float16. Before loading, hear checks free VRAM
+(default 3.5 GiB). Insufficient/unknown free VRAM selects faster-whisper CPU
+int8 before whisper.cpp. A CUDA OOM at load or during lazy inference retries
+once on CPU. Results name `faster-whisper-cuda`, `faster-whisper-cpu` or
+`whisper.cpp` and include `fallback_reason` (null when no fallback occurred).
+CLIP uses the same admission/CPU retry policy (default 2.5 GiB); both senses
+have configurable `cpu_threads`. Rhythm uses CPU only. The whisper.cpp fallback uses a private
 WAV and an explicit `-of` output prefix, then parses JSON/token timestamps.
 
 ## Configuration
@@ -69,6 +75,13 @@ device = "cuda"
 [see]
 python = ".venv-see/bin/python"
 model = "openai/clip-vit-large-patch14"
+[rhythm]
+python = ".venv-rhythm/bin/python"
+[scenes]
+python = ".venv-scenes/bin/python"
+detector = "content"
+threshold = 27.0
+min_shot_s = 0.3
 [read]
 tessdata = "./tessdata"
 [judge]
@@ -111,7 +124,12 @@ crystal-ball check render.mp4 --platform shorts --mode full \
 crystal-ball transcribe render.mp4 --srt -o speech.srt
 crystal-ball transcribe render.mp4 --vtt -o speech.vtt
 crystal-ball transcribe render.mp4 --json -o speech.json
-crystal-ball index ./media ./stills
+crystal-ball beats music.wav --export ./markers --fps 25
+crystal-ball scenes render.mp4 --first 5 --export ./shots
+crystal-ball cuts render.mp4 --music music.wav --within-frames 6
+crystal-ball check render.mp4 --platform shorts --beat-led --json
+crystal-ball index ./media ./stills --sampling shot --frames-per-shot 1
+crystal-ball index ./media --sampling interval --every 2
 crystal-ball find 'a blue sky' --top 5 --dir ./media
 crystal-ball find --image reference.png --top 3
 crystal-ball read-text render.mp4 --at 1.5
@@ -119,6 +137,52 @@ crystal-ball check render.mp4 --fix --json
 crystal-ball doctor --json
 crystal-ball setup hear
 ```
+
+`beats` runs a JSON worker in `rhythm.python` (local librosa 1.0.0), and
+returns tempo/confidence, the first 16 beats, estimated bars and artifact paths.
+Full JSON also contains onset/hit times, estimated downbeats and coarse novelty
+sections. The 4/4 assumption and first-beat downbeat phase are estimates;
+confidence combines spacing stability and onset support, not a calibrated
+probability. `--export [DIR]` writes JSON and CSV timeline markers; `--fps N`
+also writes a zero-based nearest-frame list. Without DIR, exports live beside
+the cached artifact. If a configured demucs command and ASR indicate speech,
+rhythm may use `no_vocals.wav` or `music.wav`; otherwise it analyses the mix and
+states that speech lowers beat accuracy. Separation failure falls back to mix.
+
+`scenes` runs PySceneDetect 0.7.2 in `scenes.python`, using `content` or
+`adaptive`. `threshold` is a content score (default 27), or an adaptive ratio
+(use e.g. 3 for adaptive); `min_shot_s` suppresses short adjacent shots.
+If the runtime is unavailable, ffmpeg `select='gt(scene,T)'` supplies cuts
+with an explicit fallback reason. Its scene score approximates content threshold
+as threshold/100; adaptive mode uses 0.3 because ratios are not scene scores.
+A black-level threshold detector and gradual-ramp evidence label fades.
+The incoming transition is `start`, `hard cut` or `fade`; dissolves are not
+reliably classified. One cached thumbnail per shot is shared by review,
+judge cut frames and default CLIP indexing. `--frames-per-shot 1|2|3` chooses
+shot sampling; interval mode remains available. `--export [DIR]` writes CSV
+and a CMX3600 non-drop EDL (straight source assembly; detected fades are comments,
+not inferred transition durations). Fractional frame rates use nominal timecode.
+
+`cuts` combines those artifacts with beat/onset offsets and beat snap suggestions
+within `--within-frames N` (default 6). `--music AUDIO` uses a separate soundtrack
+with the **same zero origin**; no automatic soundtrack alignment is implied.
+Frame deltas are advisory: the action does not retime an edit. CLI and Hermes
+return compact JSON; full shots, alignment and snap lists remain in artifacts.
+
+Checks add three findings, with PASS omitted from compact issue lists:
+
+- `cut_sync` runs only with `--beat-led` / Hermes `beat_led`, or a brief saying
+  beat-led or music-led. It measures distance to the nearest beat **or onset**,
+  reports median and worst cuts, and WARNs if more than 30% exceed 80 ms.
+  Fix hints contain beat snap suggestions; full alignment remains in the report.
+- `pacing` reports min/median/mean/max shot lengths as information. For vertical
+  destinations it WARNs when no cut or substantial visual change occurs in the
+  first 2 seconds. A static opening can still be intentional.
+- `flash` inspects every decoded frame at reduced spatial resolution and FAILs
+  above 3 flash cycles in any rolling 1-second window across at least 25% of
+  pixels. It estimates opposing luminance changes and saturated-red changes;
+  full artifacts disclose thresholds and event times. **Estimate, not a certified
+  Harding test.** Small, brief or spatially complex patterns may be missed.
 
 Quick and full both run signal, OCR and audio stages. Quick requests vision
 only when the relevant signal checks all pass. Full permits a single vision
@@ -175,27 +239,35 @@ Distinct shots can be intentional. The helper returns WARN hints, never FAIL.
 
 ## Hermes install
 
-Choose your existing profile and its Hermes Python; then run these yourself
-from this checkout. The build never installs into a profile automatically.
+Choose your existing profile and run the copy installer from this checkout.
+It vendors `crystal_ball` inside this plugin and never invokes pip or changes
+the shared Hermes interpreter. Its temporary import path is restored after
+loading the package; engine dependencies stay in their configured runtimes.
+The host still needs the lightweight base dependencies NumPy and Pillow.
 
 ```sh
 export HERMES_HOME="$HOME/.hermes/profiles/media"
-export HERMES_PYTHON="/path/to/hermes/venv/bin/python"
-"$HERMES_PYTHON" -m pip install .
-mkdir -p "$HERMES_HOME/plugins" "$HERMES_HOME/skills"
-cp -R hermes_plugin/crystal-ball "$HERMES_HOME/plugins/"
-cp -R hermes_plugin/skill/crystal-ball "$HERMES_HOME/skills/"
-cp crystal-ball.example.toml "$HERMES_HOME/crystal-ball.toml"
-# Edit the copied config to point to your engine interpreters/models.
+python3 scripts/install_hermes.py --hermes-home "$HERMES_HOME"
+# Optional initial config source (existing configs are always preserved):
+# python3 scripts/install_hermes.py --hermes-home "$HERMES_HOME" --config-from ./local.toml
+# Edit the profile config to point to your engine interpreters/models.
 export CRYSTAL_BALL_CONFIG="$HERMES_HOME/crystal-ball.toml"
 hermes plugins enable crystal-ball
+# To remove this installation later:
+# python3 scripts/install_hermes.py --hermes-home "$HERMES_HOME" --uninstall
 ```
+
+The manifest records installed files and newly created directories. Reinstall
+updates only unchanged files previously installed by this script. Uninstall
+removes recorded, unchanged files and empty created directories; modified files,
+pre-existing config and unrelated content are preserved and reported. Disable
+the plugin before uninstalling and restart Hermes after install/uninstall.
 
 If replacing the earlier `video-quality` plugin, first run
 `hermes plugins disable video-quality` in the same profile to avoid duplicate
 automatic checks. Start a new Hermes session and check `hermes plugins list`.
 One tool, `crystal_ball`, exposes `check`, `transcribe`, `find`, `index`,
-`read_text`, `fix`, `doctor`. Example:
+`read_text`, `beats`, `scenes`, `cuts`, `fix`, `doctor`. Example:
 
 ```json
 {"action":"check","file":"/media/render.mp4","mode":"quick"}
@@ -220,6 +292,10 @@ python scripts/privacy_scan.py
 # Uses configured local models; never downloads:
 CRYSTAL_BALL_LIVE=1 TMPDIR="$PWD/.test-tmp" python -m pytest \
   --basetemp=.test-tmp/live -m live -q
+# Milestone 2 engines only (set rhythm.python and scenes.python first):
+CRYSTAL_BALL_LIVE=1 TMPDIR="$PWD/.test-tmp" python3 -m pytest \
+  --basetemp=.test-tmp/live-detection tests/test_live.py \
+  -k 'rhythm or pyscenedetect or cut_sync' -q
 ```
 
 The 29 original quality tests and 18 search/fallback tests are ported to the
@@ -241,7 +317,7 @@ python scripts/build_release.py
 ```
 
 The wheel also carries pinned setup recipes, example config, plugin and skill
-under the interpreter's `share/crystal-ball/` directory. The source archive
+under the interpreter's `share/crystal-ball/` directory, including the copy installer. The source archive
 includes tests, docs, CI and scripts. A plain unnormalized source-archive build
 can inherit account names; use the release script before publishing.
 

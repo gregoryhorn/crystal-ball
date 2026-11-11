@@ -18,6 +18,18 @@ def checksums(path):
     return values
 
 def main():
+    if len(sys.argv)==1:
+        req=json.load(sys.stdin); kind=req['kind']
+        package={'rhythm':'librosa','scenes':'scenedetect'}[kind]
+        # Import as well as reading metadata, so broken binary dependencies surface.
+        module=importlib.import_module(package)
+        if kind=='rhythm':
+            from librosa.beat import beat_track
+        else:
+            from scenedetect.detectors import ContentDetector, AdaptiveDetector, ThresholdDetector
+            import cv2
+        print(json.dumps({'version':importlib.metadata.version(package),'device':'cpu','inference':False}))
+        return
     kind,model=sys.argv[1:]
     packages=['faster-whisper','ctranslate2','numpy'] if kind=='hear' else ['torch','transformers','numpy','pillow']
     versions={p:importlib.metadata.version(p) for p in packages}

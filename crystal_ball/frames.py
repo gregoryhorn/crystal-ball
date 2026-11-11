@@ -45,9 +45,9 @@ def review_stage(req):
     meta = req["meta"]
     dur = meta["duration"]
     last = max(0, dur - 0.08)
-    # Existing scene sampler supplies cuts; full-size exports preserve OCR detail.
-    cuts = qc.detect_scenes(req["file"], 10.0, 1.0, dur) if dur else []
-    cuts = cuts[1:]
+    from .senses.scenes import detect_scenes
+    shots=detect_scenes(req['file'],req.get('config'))
+    cuts=[s['start'] for s in shots['shots'][1:]]
     if len(cuts) > 12:
         cuts = [cuts[int(i * len(cuts) / 12)] for i in range(12)]
     cap_times = caption_times(req.get("captions"))
@@ -60,7 +60,7 @@ def review_stage(req):
         target = frame_dir / f"{i:04d}_{t:.3f}s.jpg"
         command(["ffmpeg", "-v", "error", "-nostdin", "-threads", "1", "-ss", str(t), "-i", req["file"],
                  "-map", "0:V:0", "-frames:v", "1", "-threads", "1", "-q:v", "2", "-n", target], 15)
-        frames.append({"time": t, "path": str(target)})
+        frames.append({"time": t, "path": str(target), "at_cut":any(abs(t-(cut+.1))<.002 for cut in cuts)})
     cols = min(4, len(frames))
     tw, th = 320, round(320 * meta["height"] / meta["width"])
     sheet = Image.new("RGB", (cols * tw, math.ceil(len(frames) / cols) * (th + 24)), "#202020")
@@ -73,4 +73,4 @@ def review_stage(req):
     contact = frame_dir / "contact.jpg"
     sheet.save(contact, quality=85)
     return {"frames": frames, "contact_sheet": str(contact), "frames_dir": str(frame_dir),
-            "checks": [row("review frames", "PASS", f"{len(frames)} review/caption frames exported")]}
+            "scenes":shots["paths"], "checks": [row("review frames", "PASS", f"{len(frames)} review/caption frames exported")]}

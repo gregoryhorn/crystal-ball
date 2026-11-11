@@ -10,7 +10,7 @@ from .cache import dumps
 from .config import load
 from .hooks import Hooks
 
-ACTIONS=['check','transcribe','find','index','read_text','fix','doctor']
+ACTIONS=['check','transcribe','find','index','read_text','fix','doctor','beats','scenes','cuts']
 
 def profile_config():
     explicit=os.environ.get('CRYSTAL_BALL_CONFIG')
@@ -52,7 +52,7 @@ def register(ctx):
             if action not in ACTIONS:
                 raise ValueError('unknown action')
             file=params.get('file')
-            if action in {'check','transcribe','read_text','fix'} and not file:
+            if action in {'check','transcribe','read_text','fix','beats','scenes','cuts'} and not file:
                 raise ValueError('file is required for this action')
             result=invoke(action,**params)
             if action in {'check','fix'} and file:
@@ -71,13 +71,22 @@ def register(ctx):
         'at':{'type':'number','minimum':0,'description':'read_text timestamp in seconds'},
         'platform':{'type':'string'},
         'mode':{'type':'string','enum':['quick','full'],'default':'quick'},
+        'beat_led':{'type':'boolean','default':False},
+        'music':{'type':'string','description':'Separate soundtrack for cuts, with matching timeline origin'},
+        'fps':{'type':'number','exclusiveMinimum':0},
+        'within_frames':{'type':'integer','minimum':0,'default':6},
+        'first':{'type':'integer','minimum':0,'default':5},
+        'export':{'type':'string','description':'Export directory; empty string uses artifact directory'},
+        'sampling':{'type':'string','enum':['shot','interval'],'default':'shot'},
+        'every':{'type':'number','exclusiveMinimum':0,'default':2},
+        'frames_per_shot':{'type':'integer','enum':[1,2,3],'default':1},
         'captions':{'type':'string'},'script':{'type':'string'},'brief':{'type':'string'},
         'expect_text':{'type':'array','items':{'type':'string'}},
         'fix':{'type':'boolean','default':False},'force':{'type':'boolean','default':False},
     }
     ctx.register_tool(name='crystal_ball',toolset='crystal_ball',schema={
         'name':'crystal_ball',
-        'description':'Media senses: check, transcribe, CLIP find/index, OCR read_text, mechanical fix, or offline doctor. Compact JSON and artifact/report paths; no images. Sampled visual critique cannot hear or judge lip-sync. Check passed ≠ approved.',
+        'description':'Media senses: check, transcribe, CLIP find/index, OCR read_text, beats/scenes/cuts and snap suggestions, mechanical fix, or offline doctor. Compact JSON and artifact/report paths; no images. Sampled visual critique cannot hear or judge lip-sync. Check passed ≠ approved.',
         'parameters':{'type':'object','properties':props,'required':['action'],'additionalProperties':False},
     },handler=handle)
     for name in ('post_tool_call','pre_llm_call','pre_verify','on_session_end'):

@@ -11,13 +11,15 @@ from .senses.read import ocr_stage, confirm_safe_zones
 from .senses.judge import vision_stage, crosscheck_vision
 from .senses.hear import audio_stage
 from .fix import apply_fix
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 MAX_BYTES = 1500
-TIMEOUTS = {"signal":180,"review":120,"ocr":120,"audio":300,"vision":100}
+TIMEOUTS = {"signal":180,"review":120,"ocr":120,"audio":300,"vision":100,"editing":600}
 CACHE = None
 
 def review_stage(req):
-    options={"captions":fingerprint(req["captions"]) if req.get("captions") else None,"version":VERSION}
+    cfg=req.get("config") or load()
+    options={"captions":fingerprint(req["captions"]) if req.get("captions") else None,"version":VERSION,
+             "scenes":cfg["scenes"],"runtime":runtime_stamp(cfg)}
     def produce(directory):
         value=_review_stage({**req,"run_dir":str(directory)})
         value["artifact_paths"]=[f["path"] for f in value["frames"]]+[value["contact_sheet"]]
@@ -110,7 +112,7 @@ def compact(doc, cached=False):
         result["not_checked"].pop()
         result["more_not_checked_in_report"] = True
     return result
-def _base_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", force=False):
+def _base_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", force=False, beat_led=False):
     cfg = load()
     path = Path(file).expanduser().resolve()
     if not path.is_absolute() or not path.is_file():
@@ -132,7 +134,7 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
         raise ValueError("captions must be .ass or .srt")
     rules = rules_for(path, cfg)
     identity = fingerprint(path)
-    params = dict(platform=platform, captions=captions, script=script, brief=brief, expect_text=expect_text or [], mode=mode)
+    params = dict(platform=platform, captions=captions, script=script, brief=brief, expect_text=expect_text or [], mode=mode, beat_led=beat_led)
     # Include relevant code/data dependencies so installing audio/Arabic cannot leave stale SKIPs.
     dependencies = {"config":cfg, "engines":runtime_stamp(cfg), "code":[fingerprint(p) for p in Path(__file__).parent.rglob("*.py")]}
     key = hashlib.sha1(dumps([identity, params, VERSION, deps, rules["deps"], dependencies]).encode()).hexdigest()
@@ -177,7 +179,8 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
     run_dir.mkdir(parents=True)
     request = {**params, "file": str(path), "platform": platform, "meta": meta,
                "rules": rules, "run_dir": str(run_dir), "cache_dir": cfg["cache_dir"], "config":cfg}
-    with futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix="video-qc-stage") as pool:
+    with futures.ThreadPoolExecutor(max_workers=6, thread_name_prefix="video-qc-stage") as pool:
+        editing = pool.submit(run_stage, "editing", request)
         sig = pool.submit(run_stage, "signal", request)
         audio = pool.submit(run_stage, "audio", request)
         review = pool.submit(run_stage, "review", request)
@@ -192,6 +195,7 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
         ocr = pool.submit(ocr_job)
         vision = pool.submit(vision_job)
         stages = {"signal": sig.result(), "review": review.result(), "audio": audio.result(), "ocr": ocr.result()}
+        stages["editing"] = editing.result()
         stages["vision"] = crosscheck_vision(vision.result(), stages["ocr"])
         stages["ocr"] = confirm_safe_zones(stages["ocr"],stages["vision"])
     checks = [r for stage in stages.values() for r in stage.get("checks", [])]
@@ -207,15 +211,15 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
     if not any(r["id"] == "source_changed" for r in checks):
         atomic(cached_path, dumps(doc))
     return compact(doc), doc
-def quality_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", fix=False, force=False):
-    result, doc = _base_check(file, platform, captions, script, brief, expect_text, mode, force)
+def quality_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", fix=False, force=False, beat_led=False):
+    result, doc = _base_check(file, platform, captions, script, brief, expect_text, mode, force, beat_led)
     if fix:
         fixed = apply_fix(doc, force, config=load())
         # Full commands belong in the human report, not in the model's context.
         atomic(Path(doc["report"]).with_name("fix.json"), dumps(fixed))
         result["fix"] = {k: v for k, v in fixed.items() if k != "commands"}
         if fixed["status"] == "written":
-            checked, _ = _base_check(fixed["file"], platform, captions, script, brief, expect_text, mode, False)
+            checked, _ = _base_check(fixed["file"], platform, captions, script, brief, expect_text, mode, False, beat_led)
             result["fix"].update(verdict=checked["verdict"], counts=checked["counts"], report=checked["report"])
         # Leave both verdicts visible when the optional fix envelope needs more space.
         while len(dumps(result).encode()) > MAX_BYTES and result["items"]:

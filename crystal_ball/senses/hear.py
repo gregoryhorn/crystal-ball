@@ -34,7 +34,7 @@ class Worker:
             if self.proc is None:
                 self.start()
             self.counter+=1
-            req={'id':self.counter,'op':'transcribe','file':str(file),'model':self.cfg['hear']['model'],'device':self.cfg['hear']['device']}
+            req={'id':self.counter,'op':'transcribe','file':str(file),'model':self.cfg['hear']['model'],'device':self.cfg['hear']['device'],'min_free_vram_gb':self.cfg['hear']['min_free_vram_gb'],'cpu_threads':self.cfg['hear']['cpu_threads']}
             try:
                 self.proc.stdin.write(dumps(req)+'\n'); self.proc.stdin.flush()
                 with selectors.DefaultSelector() as selector:
@@ -99,7 +99,7 @@ def whispercpp(file,cfg):
                     words.append({'word':text,'start':offsets['from']/1000,'end':offsets['to']/1000})
             offsets=s['offsets']
             segments.append({'start':offsets['from']/1000,'end':offsets['to']/1000,'text':s['text'].strip(),'words':words})
-        return validate_transcript({'engine':'whisper.cpp','segments':segments,'text':' '.join(s['text'] for s in segments),'duration':max((s['end'] for s in segments),default=0),'word_timing':'token estimates'})
+        return validate_transcript({'engine':'whisper.cpp','fallback_reason':None,'segments':segments,'text':' '.join(s['text'] for s in segments),'duration':max((s['end'] for s in segments),default=0),'word_timing':'token estimates'})
 
 def transcribe(file,config=None,worker=None):
     cfg=config or load(); Path(cfg['cache_dir']).mkdir(parents=True,exist_ok=True)

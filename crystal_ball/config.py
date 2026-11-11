@@ -9,9 +9,11 @@ from pathlib import Path
 
 DEFAULTS = {
     'cache_dir': '~/.cache/crystal-ball', 'projects_root': None,
-    'hear': {'python': sys.executable, 'model': 'large-v3-turbo', 'device': 'cuda', 'demucs_command': []},
+    'hear': {'python': sys.executable, 'model': 'large-v3-turbo', 'device': 'cuda', 'min_free_vram_gb': 3.5, 'cpu_threads': 4, 'demucs_command': []},
     'whispercpp': {'bin': '', 'model': ''},
-    'see': {'python': sys.executable, 'model': 'openai/clip-vit-large-patch14'},
+    'see': {'python': sys.executable, 'model': 'openai/clip-vit-large-patch14', 'min_free_vram_gb': 2.5, 'cpu_threads': 4},
+    'rhythm': {'python': sys.executable},
+    'scenes': {'python': sys.executable, 'detector': 'content', 'threshold': 27.0, 'min_shot_s': 0.3},
     'read': {'tessdata': ''},
     'judge': {'backend': 'off', 'base_url': '', 'model': '', 'api_key_env': ''},
     'rules': {'files': []}, 'fix': {'protected': ['**/final/**']},
@@ -50,7 +52,7 @@ def load(path=None):
                 else:
                     cfg[section] = value
     base = chosen.resolve().parent if chosen else Path.cwd()
-    for section, key in [(None,'cache_dir'),(None,'projects_root'),('hear','python'),('see','python'),('read','tessdata'),('whispercpp','model'),('whispercpp','bin')]:
+    for section, key in [(None,'cache_dir'),(None,'projects_root'),('hear','python'),('see','python'),('rhythm','python'),('scenes','python'),('read','tessdata'),('whispercpp','model'),('whispercpp','bin')]:
         value = cfg[section][key] if section else cfg[key]
         if value:
             p = Path(os.path.expandvars(str(value))).expanduser()
@@ -73,6 +75,16 @@ def load(path=None):
     for section, key in [('rules','files'),('fix','protected'),('hear','demucs_command')]:
         if not isinstance(cfg[section][key], list) or any(not isinstance(x,str) for x in cfg[section][key]):
             raise ValueError(f'{section}.{key} must be an array of strings')
+    if cfg['scenes']['detector'] not in {'content','adaptive'}:
+        raise ValueError('scenes.detector must be content or adaptive')
+    for section,key in [('scenes','threshold'),('scenes','min_shot_s'),('hear','min_free_vram_gb'),('see','min_free_vram_gb')]:
+        cfg[section][key]=float(cfg[section][key])
+        if not 0 < cfg[section][key] < float('inf'):
+            raise ValueError(f'{section}.{key} must be positive and finite')
+    for section in ('hear','see'):
+        cfg[section]['cpu_threads']=int(cfg[section]['cpu_threads'])
+        if cfg[section]['cpu_threads']<1:
+            raise ValueError('cpu_threads must be positive')
     cfg['_base'] = str(base)
     return cfg
 

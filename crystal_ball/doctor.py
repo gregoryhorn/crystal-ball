@@ -36,6 +36,14 @@ def doctor(config=None):
             add(kind,'WARN' if kind=='hear' and cfg[kind]['device']=='cuda' and not gpu else 'PASS',f'local model verified; {gpu} GPU(s); CPU available; inference not run',**detail)
         except Exception as exc:
             add(kind,'WARN',f'engine/model unavailable: {str(exc)[-220:]}')
+    for kind,package in [('rhythm','librosa'),('scenes','scenedetect')]:
+        try:
+            from .workers import request
+            detail=request(cfg[kind]['python'],'crystal_ball.doctor_worker',{'kind':kind},30)
+            add(kind,'PASS',f"{package} {detail['version']}; CPU engine available; inference not run",**detail)
+        except Exception as exc:
+            suffix='; ffmpeg select fallback available' if kind=='scenes' and shutil.which('ffmpeg') else ''
+            add(kind,'WARN',f'engine unavailable: {str(exc)[-180:]}'+suffix)
     wc=cfg['whispercpp']; binary=shutil.which(wc['bin']) if wc['bin'] else None
     if binary and Path(wc['model']).is_file():
         try:

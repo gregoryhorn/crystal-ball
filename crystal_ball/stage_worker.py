@@ -8,7 +8,8 @@ def main():
     try:
         stage, request = sys.argv[1:]
         req=json.loads(Path(request).read_text())
-        fn={"signal":core.signal_stage,"review":core.review_stage,"ocr":core.ocr_stage,"vision":core.vision_stage,"audio":core.audio_stage}[stage]
+        from .editing import edit_stage
+        fn={"signal":core.signal_stage,"review":core.review_stage,"ocr":core.ocr_stage,"vision":core.vision_stage,"audio":core.audio_stage,"editing":edit_stage}[stage]
         print(dumps(fn(req)))
     except Exception as exc:
         print(dumps({"error":f"{type(exc).__name__}: {exc}"[:400]}))
