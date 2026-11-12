@@ -405,9 +405,9 @@ def test_audio_missing_is_skip(clips, tmp_path, monkeypatch):
 
 
 def test_prose_is_not_a_name_misspelling():
-    lines = [{"time": 1, "text": "This keeps a reference reviewed"}]
+    lines = [{"time": t, "confidence": 95, "text": "This keeps a reference reviewed"} for t in (1,2)]
     assert not q.spelling_checks(lines, ["Keep", "References", "Review"], proper_only=True)
-    assert q.spelling_checks([{"time": 2, "text": "Alexiz"}], ["Alexis"], proper_only=True)
+    assert q.spelling_checks([{"time": t, "confidence": 95, "text": "Alexiz"} for t in (1,2)], ["Alexis"], proper_only=True)
 
 
 def test_unprobeable_file_has_skip_report(tmp_path, monkeypatch):

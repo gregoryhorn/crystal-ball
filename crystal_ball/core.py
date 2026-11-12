@@ -100,6 +100,7 @@ def compact(doc, cached=False):
     result = {"verdict": verdict, "cached": cached, "platform": doc["platform"],
               "inference": doc.get("inference"), "counts": counts, "items": issues,
               "not_checked": [f"{r['id']}: {r['summary']}"[:140] for r in checks if r["status"] == "SKIP"],
+              "not_checked_omitted_count": 0,
               "report": doc["report"], "review_frames": doc["frames_dir"]}
     logs = sorted({stage['log'] for stage in doc.get('stages', {}).values() if stage.get('log')})
     if logs:
@@ -109,6 +110,11 @@ def compact(doc, cached=False):
 def fit_compact(result):
     """Spend the budget on every non-PASS identity before optional details."""
     result['omitted_details']=result.get('omitted_details',0)
+    result['not_checked_omitted_count']=result.get('not_checked_omitted_count',0)
+    if result['not_checked_omitted_count']>0:
+        result['more_not_checked_in_report']=True
+    else:
+        result.pop('more_not_checked_in_report',None)
     for limit in (80,40):
         if len(dumps(result).encode())<=MAX_BYTES:
             return result
@@ -120,6 +126,7 @@ def fit_compact(result):
     # not_checked is a compatibility detail list; SKIP identities also live in items.
     while len(dumps(result).encode())>MAX_BYTES and result['not_checked']:
         result['not_checked'].pop()
+        result['not_checked_omitted_count']+=1
         result['more_not_checked_in_report']=True
     for index in range(len(result['items'])-1,-1,-1):
         if len(dumps(result).encode())<=MAX_BYTES:
@@ -138,6 +145,8 @@ def fit_compact(result):
         if len(dumps(result).encode())<=MAX_BYTES:
             break
         result.pop(key,None)
+    if len(dumps(result).encode())>MAX_BYTES:
+        raise ValueError('compact result exceeds byte budget: mandatory identities, paths and metadata retained')
     return result
 
 def _base_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", force=False, beat_led=False):

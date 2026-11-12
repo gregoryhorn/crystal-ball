@@ -3,7 +3,7 @@ import csv
 import io
 import os
 from pathlib import Path
-from ..util import command, row, skip, norm, spelling_checks
+from ..util import command, row, skip, norm, spelling_checks, _spelling_tokens
 from ..config import load
 from ..cache import Store
 from ..checks import platforms
@@ -77,8 +77,13 @@ def ocr_stage(req):
     data=ocr_frames(req['file'],frames,req.get('config'))
     sizes={float(k):v for k,v in data['sizes'].items()}
     checks=filter_lines(data['lines'],sizes,platforms().PLATFORMS[req['platform']]['safe'],req['platform'])
-    checks+=spelling_checks(data['lines'],req.get('expect_text',[]))
-    checks+=spelling_checks(data['lines'],req['rules']['terms'],proper_only=True)
+    expected=req.get('expect_text',[])
+    # Deduplicate vocabulary by the same spelling-local normalization, not display copy.
+    expected_keys={tuple(t[0] for t in _spelling_tokens(term)) for term in expected}
+    rule_terms=[term for term in req['rules']['terms']
+                if tuple(t[0] for t in _spelling_tokens(term)) not in expected_keys]
+    checks+=spelling_checks(data['lines'],expected)
+    checks+=spelling_checks(data['lines'],rule_terms,proper_only=True)
     for expected in req.get('expect_text',[]):
         if not any(norm(expected) in norm(l['text']) for l in data['lines']):
             checks.append(row('expected_text','WARN',f'"{expected}" not confirmed in sampled OCR'))

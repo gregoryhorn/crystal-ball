@@ -1,5 +1,6 @@
 """Second live-trial regressions, using local synthetic media and no models."""
 import importlib.util
+import copy
 import json
 import os
 from pathlib import Path
@@ -177,6 +178,7 @@ def test_compact_keeps_every_nonpass_identity(tmp_path,with_fix):
     checks += [core.row('good','PASS','ok')]
     doc={'platform':'youtube','report':str(tmp_path/'report.html'),
          'frames_dir':str(tmp_path/'frames'),'checks':checks}
+    original=copy.deepcopy(doc)
     result=core.compact(doc)
     if with_fix:
         result['fix']={'status':'written','file':str(tmp_path/'fixed.mp4'),
@@ -186,6 +188,131 @@ def test_compact_keeps_every_nonpass_identity(tmp_path,with_fix):
     assert {(r['id'],r['status']) for r in result['items']}==expected
     assert result['omitted_details']>0
     assert len(dumps(result).encode())<=1500
+    assert result['not_checked_omitted_count']==3-len(result['not_checked'])
+    assert result.get('more_not_checked_in_report',False)==(result['not_checked_omitted_count']>0)
+    assert doc==original
+
+
+@pytest.mark.parametrize('skip_count',[0,3])
+def test_compact_untrimmed_omissions(skip_count):
+    checks=[core.row('same','SKIP','reason '+str(i)) for i in range(skip_count)]
+    doc={'checks':checks,'platform':'youtube','report':'report.html','frames_dir':'frames'}
+    original=copy.deepcopy(doc)
+    result=core.compact(doc)
+    assert result['not_checked_omitted_count']==0
+    assert 'more_not_checked_in_report' not in result
+    assert len(result['not_checked'])==skip_count
+    assert result['counts']['SKIP']==skip_count
+    assert result['report']=='report.html'
+    assert result['verdict']==('WARN' if skip_count else 'PASS')
+    result.pop('not_checked_omitted_count')
+    result['more_not_checked_in_report']=True
+    assert core.fit_compact(result)['not_checked_omitted_count']==0
+    assert 'more_not_checked_in_report' not in result
+    assert doc==original
+
+
+@pytest.mark.parametrize('removed',[1,3])
+def test_compact_exact_detail_entry_count_and_refits(monkeypatch,removed):
+    raw={'verdict':'WARN','counts':{'PASS':0,'WARN':0,'FAIL':0,'SKIP':3},
+         'items':[{'id':'duplicate','status':'SKIP'}],
+         'not_checked':['duplicate: '+('تعذر '*25)+str(i) for i in range(3)],
+         'report':'report.html','omitted_details':0,'not_checked_omitted_count':0}
+    expected=copy.deepcopy(raw)
+    expected['not_checked']=expected['not_checked'][:3-removed]
+    expected.update(not_checked_omitted_count=removed,more_not_checked_in_report=True)
+    monkeypatch.setattr(core,'MAX_BYTES',len(dumps(expected).encode()))
+    result=core.fit_compact(raw)
+    assert result==expected
+    assert core.fit_compact(result)==expected
+    assert api.compact_action('check',result)==expected
+    if removed==1:
+        result['fix']={'status':'no_safe_fix','reason':'review source '*25}
+        result=api.compact_action('fix',result)
+        assert result['not_checked_omitted_count']==3-len(result['not_checked'])
+        assert result['not_checked_omitted_count']>removed
+        assert result['more_not_checked_in_report'] is True
+    assert result['counts']['SKIP']==3
+    assert result['items']==[{'id':'duplicate','status':'SKIP'}]
+    assert len(dumps(result).encode())<=core.MAX_BYTES
+
+
+@pytest.mark.parametrize('count',[0,2])
+@pytest.mark.parametrize('flag',[None,False,True])
+def test_compact_legacy_flag_is_derived_before_early_return(count,flag):
+    raw={'items':[],'not_checked':[],'not_checked_omitted_count':count}
+    if flag is not None:
+        raw['more_not_checked_in_report']=flag
+    result=core.fit_compact(raw)
+    assert result['not_checked_omitted_count']==count
+    assert result.get('more_not_checked_in_report',False)==(count>0)
+    assert ('more_not_checked_in_report' in result)==(count>0)
+
+
+def test_compact_shortening_is_not_an_omitted_entry():
+    checks=[core.row('skip','SKIP','short reason'),core.row('warning','WARN','تنبيه '*100,[], 'fix '*100)]
+    doc={'checks':checks,'platform':'youtube','report':'report.html','frames_dir':'frames'}
+    result=core.compact(doc)
+    assert result['not_checked']==['skip: short reason']
+    assert result['not_checked_omitted_count']==0
+    assert 'more_not_checked_in_report' not in result
+    assert len(dumps(result).encode())<=1500
+
+
+def test_compact_counts_metadata_before_budget_return(monkeypatch):
+    raw={'items':[{'id':'skip','status':'SKIP'}],'not_checked':['reason '*20],
+         'counts':{'SKIP':1},'verdict':'WARN','report':'report.html','omitted_details':0}
+    monkeypatch.setattr(core,'MAX_BYTES',len(dumps(raw).encode()))
+    result=core.fit_compact(raw)
+    assert result['not_checked']==[]
+    assert result['not_checked_omitted_count']==1
+    assert result['more_not_checked_in_report'] is True
+    assert len(dumps(result).encode())<=core.MAX_BYTES
+
+
+def test_compact_unavoidable_overflow_retains_mandatory_evidence():
+    raw={'items':[{'id':'skip','status':'SKIP'}],'not_checked':[],
+         'counts':{'SKIP':1},'verdict':'WARN','report':'x'*1600}
+    with pytest.raises(ValueError,match='mandatory identities, paths and metadata retained'):
+        core.fit_compact(raw)
+    assert raw['items']==[{'id':'skip','status':'SKIP'}]
+    assert raw['counts']=={'SKIP':1} and raw['report']=='x'*1600
+    assert raw['not_checked_omitted_count']==0
+
+
+def test_maintenance_cli_and_hermes_reports_agree(tmp_path):
+    video=tmp_path/'text.mp4'
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
+                    'color=c=0x173f65:s=720x1280:r=25:d=3','-vf',
+                    "drawtext=font=DejaVuSans-Bold:text='NEW PLACE':fontsize=64:fontcolor=white:x=100:y=1190",
+                    '-an','-threads','1',str(video)],check=True,capture_output=True,timeout=20)
+    rules=tmp_path/'rules.md'; rules.write_text('Use "NEW PLACES".\n')
+    with Path(os.environ['CRYSTAL_BALL_CONFIG']).open('a') as config:
+        config.write('\n[rules]\nfiles = ['+json.dumps(str(rules))+']\n')
+    cli=subprocess.run([sys.executable,'-m','crystal_ball','check',str(video),
+                        '--platform','shorts','--expect-text','NEW PLACES','--json'],
+                       capture_output=True,text=True,timeout=45)
+    assert cli.returncode==1,cli.stderr  # The intentional safe-zone violation FAILs.
+    cli_result=json.loads(cli.stdout)
+    adapter_result=hermes.invoke('check',file=str(video),platform='shorts',expect_text=['NEW PLACES'])
+    for result in (cli_result,adapter_result):
+        assert len(dumps(result).encode())<=1500
+        report=Path(result['report'])
+        assert report.is_file()
+        doc=json.loads(report.with_name('full.json').read_text())
+        checks=doc['checks']
+        assert result['counts']=={s:sum(r['status']==s for r in checks) for s in ('PASS','WARN','FAIL','SKIP')}
+        assert result['not_checked_omitted_count']==result['counts']['SKIP']-len(result['not_checked'])
+        assert result.get('more_not_checked_in_report',False)==(result['not_checked_omitted_count']>0)
+        assert {(r['id'],r['status']) for r in result['items']}=={(r['id'],r['status']) for r in checks if r['status']!='PASS'}
+        # Rule extraction also yields PLACES; that is a distinct expected/candidate pair.
+        spelling=[r for r in checks if r['id']=='ocr_spelling' and 'vs expected "NEW PLACES"' in r['summary']]
+        assert len(spelling)==1 and len(spelling[0]['timestamps'])>=2
+        assert 'similarity >=79%, OCR confidence >=70, >=2 sampled frames' in spelling[0]['summary']
+        assert doc['stages']['ocr']['lines']
+        assert any(r['id']=='expected_text' for r in checks)
+    assert cli_result['report']==adapter_result['report']
+    assert adapter_result.get('cached',True)
 
 
 def test_host_stage_preserves_injected_auxiliary_package(tmp_path,monkeypatch):

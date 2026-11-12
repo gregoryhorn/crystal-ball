@@ -2,6 +2,7 @@ import contextlib, csv, difflib, hashlib, io, json, math, os, re, signal, subpro
 from pathlib import Path
 from .cache import dumps, atomic, fingerprint
 import traceback
+import unicodedata
 
 def _python_env(extra=None):
     """Remove inherited interpreter selectors without changing this process."""
@@ -109,24 +110,83 @@ def process_json(cmd, timeout, env=None):
 def norm(text):
     return " ".join(re.findall(r"\w+", text.casefold()))
 
+def _spelling_token(raw):
+    """Return normalized text, script, case and letter count; None is a barrier."""
+    text=unicodedata.normalize('NFC',raw).strip('\"\'‘’“”()[]{}.,:;?!،؛؟')
+    scripts=set(); letters=0
+    for i,char in enumerate(text):
+        category=unicodedata.category(char)
+        if category.startswith('L'):
+            name=unicodedata.name(char,'')
+            script='Latin' if 'LATIN' in name else 'Arabic' if 'ARABIC' in name else None
+            if script is None:
+                return None
+            scripts.add(script); letters+=1
+        elif category.startswith('M'):
+            if not i or not unicodedata.category(text[i-1]).startswith(('L','M')):
+                return None
+        elif char in "'-’":
+            previous=i-1
+            while previous>=0 and unicodedata.category(text[previous]).startswith('M'):
+                previous-=1
+            if previous<0 or not unicodedata.category(text[previous]).startswith('L') or i+1==len(text) or not unicodedata.category(text[i+1]).startswith('L'):
+                return None
+        else:
+            return None
+    if len(scripts)!=1:
+        return None
+    return (unicodedata.normalize('NFC',text.casefold()),scripts.pop(),text[0].isupper(),letters)
+
+def _spelling_tokens(text):
+    tokens=[_spelling_token(w) for w in text.split()]
+    return [t for t in tokens if t is not None] if all(t is not None for t in tokens) else []
+
+def _spelling_window(wanted, candidate, proper_only):
+    if any(token is None for token in candidate) or (proper_only and not any(t[2] for t in candidate)):
+        return False
+    for target,word in zip(wanted,candidate):
+        if target[1]!=word[1]:
+            return False
+        if target[0]!=word[0]:
+            if min(target[3],word[3])<4:
+                return False
+            if target[3]-word[3]>=2 and (target[0].startswith(word[0]) or target[0].endswith(word[0])):
+                return False
+    return True
+
+def _spelling_evidence(value, minimum, maximum=math.inf):
+    return (not isinstance(value,bool) and isinstance(value,(int,float)) and
+            minimum<=value<=maximum and (isinstance(value,int) or math.isfinite(value)))
+
 def spelling_checks(lines, expected, proper_only=False):
-    checks = []
+    targets={}
+    for target in expected:
+        tokens=_spelling_tokens(target)
+        if tokens:
+            targets.setdefault(' '.join(t[0] for t in tokens),(target,tokens))
+    matches={}
     for line in lines:
-        original_words = re.findall(r"\w+", line["text"])
-        words = [w.casefold() for w in original_words]
-        for target in expected:
-            wanted = norm(target)
-            size = len(wanted.split())
-            if not wanted:
-                continue
-            candidates = [" ".join(words[i:i+size]) for i in range(max(1, len(words)-size+1))
-                          if not proper_only or any(w[0].isupper() for w in original_words[i:i+size])]
-            for candidate in candidates:
-                ratio = difflib.SequenceMatcher(None, wanted, candidate).ratio()
-                if candidate != wanted and .79 <= ratio < 1 and min(len(wanted), len(candidate)) >= 4:
-                    checks.append(row("ocr_spelling", "WARN", f'"{candidate}" vs expected "{target}" (OCR >=70)',
-                                      [[line["time"], line["time"]]], "edit the source text and re-render"))
-                    break
+        if not _spelling_evidence(line.get('confidence'),70,100) or not _spelling_evidence(line.get('time'),0):
+            continue
+        words=[_spelling_token(w) for w in line['text'].split()]
+        for wanted,(target,tokens) in targets.items():
+            size=len(tokens)
+            for i in range(len(words)-size+1):
+                window=words[i:i+size]
+                if not _spelling_window(tokens,window,proper_only):
+                    continue
+                candidate=' '.join(t[0] for t in window if t is not None)
+                ratio=difflib.SequenceMatcher(None,wanted,candidate).ratio()
+                if min(len(wanted),len(candidate))>=4 and .79<=ratio<1:
+                    matches.setdefault((wanted,candidate),set()).add(line['time'])
+    checks=[]
+    for (wanted,candidate),times in sorted(matches.items()):
+        if len(times)>=2:
+            target=targets[wanted][0]
+            checks.append(row('ocr_spelling','WARN',
+                              f'Possible spelling: "{candidate}" vs expected "{target}" (similarity >=79%, OCR confidence >=70, >=2 sampled frames)',
+                              [[t,t] for t in sorted(times)],
+                              'inspect the timestamped frames and source text; correct and re-render if confirmed'))
     return checks
 
 def validate_checks(checks):
