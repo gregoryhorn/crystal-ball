@@ -9,7 +9,7 @@ from .util import error_result
 
 def parser():
     ap=argparse.ArgumentParser(prog='crystal-ball',description='Four media senses. Evidence, not creative approval.')
-    ap.add_argument('--version',action='version',version='1.1.0')
+    ap.add_argument('--version',action='version',version='1.1.1')
     sub=ap.add_subparsers(dest='action',required=True)
     c=sub.add_parser('check'); c.add_argument('file')
     for option in ('platform','captions','script','brief'):

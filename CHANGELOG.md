@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1
+
+- Report the exact number of `not_checked` entries left out of a compact result
+  (`not_checked_omitted_count`); `more_not_checked_in_report` is now set only
+  when entries were actually omitted.
+- Cut noisy OCR spelling hints: require OCR confidence >=70, clean single-script
+  tokens, no truncated fragments, and the same suspected typo at two or more
+  sampled timestamps. The summary now states both thresholds.
+- A compact result that still exceeds the byte budget after all optional detail
+  is trimmed now returns an error instead of an oversize result.
+
 ## 1.1.0 / Milestone 2 (0.2.0 feature milestone)
 
 - Add local librosa beat/onset analysis, estimated 4/4 bars/downbeats and novelty
