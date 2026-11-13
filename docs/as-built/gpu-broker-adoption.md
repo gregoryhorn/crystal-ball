@@ -49,11 +49,11 @@ idle-only activation/restart; no broker acquisition was authorized here.
 
 - Clean primary `main`, candidate `1b7ff76`, sole worktree. Re-ran the documented
   non-live command with `/usr/bin/python3`, broker source
-  `/home/gregory/Projects/gpu-broker/src`, and profile scratch basetemp:
+  `~/Projects/gpu-broker/src`, and profile scratch basetemp:
   **208 passed, 8 deselected, 10 subtests passed in 24.09s**, exit 0.
   Privacy scan PASS (91 publishable files, zero findings); whitespace gate passed.
 - Verified existing deployment at
-  `/home/gregory/.hermes/profiles/video/plugins/crystal-ball`. All vendor files
+  `~/.hermes/profiles/video/plugins/crystal-ball`. All vendor files
   matched their installation manifest; only `gpu.py`, `senses/hear_worker.py`
   and `senses/see.py` differed from candidate. After tests, backed up those
   files and the manifest under the deployment's
@@ -92,11 +92,11 @@ setuptools, so direct offline editable builds failed without changing either
 environment. A PEP 660 editable wheel was built with the existing system
 setuptools and installed using uv pip install --offline --no-deps into:
 
-- /home/gregory/.hermes/profiles/video/tools/venvs/asr-gpu (Python 3.14.4).
-- /home/gregory/.hermes/profiles/video/tools/stable-audio-open/venv (Python 3.11.15).
+- ~/.hermes/profiles/video/tools/venvs/asr-gpu (Python 3.14.4).
+- ~/.hermes/profiles/video/tools/stable-audio-open/venv (Python 3.11.15).
 
 Only gpu-broker 0.1.0 was added. The installed .pth references the durable
-/home/gregory/Projects/gpu-broker/src checkout, not its temporary build wheel.
+~/Projects/gpu-broker/src checkout, not its temporary build wheel.
 No model dependencies were upgraded and no source copy/restart was needed.
 Outside the checkout, both interpreters read back gpu_broker from that source,
 and the installed vendor Session API returned CPU/no handle when disabled,

@@ -202,7 +202,7 @@ TRANSFORMERS_OFFLINE=1; command for each was `$Python -m pytest -q -rs
 $Scratch is this developer profile's cache/scratch. Observed exit 0 for both:
 - /usr/bin/python3 (3.14.4): 258 passed, 8 skipped, 10 subtests passed in 29.89s;
   two existing PurePath.as_uri deprecation warnings in report.py.
-- /home/gregory/.hermes/profiles/app-developer/cache/scratch/crystal-windows-venv/bin/python
+- ~/.hermes/profiles/app-developer/cache/scratch/crystal-windows-venv/bin/python
   (3.11.15): 258 passed, 8 skipped, 10 subtests passed in 28.30s.
 Both skip only the opt-in live-model tests. Focused runtime/second-trial suites:
 33 passed on each interpreter. Candidate: local main commit containing this
