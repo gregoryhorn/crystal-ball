@@ -7,12 +7,15 @@ def trusted_directories(env=None):
     env = os.environ if env is None else env
     cwd = os.path.normcase(os.path.realpath(os.getcwd()))
     found = []
+    identities = set()
     for entry in env.get('PATH', os.defpath).split(os.pathsep):
         if not entry or not os.path.isabs(entry):
             continue
-        p = os.path.normcase(os.path.realpath(entry))
-        if p != cwd and p not in found:
+        p = os.path.realpath(entry)
+        identity = os.path.normcase(p)
+        if identity != cwd and identity not in identities:
             found.append(p)
+            identities.add(identity)
     return found
 
 

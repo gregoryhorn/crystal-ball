@@ -132,6 +132,28 @@ def test_rhythm_stub_protocol_cache_and_exports(tmp_path,monkeypatch):
     assert len(Path(paths['csv']).read_text().splitlines())==9
 
 
+@pytest.mark.parametrize('module,doc,expected_rows',[
+    (scenes,{'fps':25,'shots':[{'shot':1,'start':0,'end':1,'duration':1,
+                             'cut_type':'start','thumbnail':'a, b/é.jpg'}]},2),
+    (rhythm,{'beats':[0.,.5]},3),
+])
+def test_csv_exports_with_windows_newline_translation(tmp_path,monkeypatch,module,doc,expected_rows):
+    import csv
+    # Exercise the Windows text writer contract on every host. The real atomic
+    # helper uses newline=None, which translates LF to CRLF on Windows.
+    def windows_atomic(path,text):
+        with Path(path).open('w',encoding='utf-8',newline='\r\n') as stream:
+            stream.write(text)
+    monkeypatch.setattr(module,'atomic',windows_atomic)
+    path=Path(module.export(doc,tmp_path)['csv'])
+    assert b'\r\r\n' not in path.read_bytes()
+    with path.open(encoding='utf-8',newline='') as stream:
+        rows=list(csv.reader(stream))
+    assert len(rows)==expected_rows and all(rows)
+    if module is scenes:
+        assert rows[1][-1]=='a, b/é.jpg'
+
+
 def test_index_by_shot_reduces_frame_count(tmp_path,monkeypatch):
     from crystal_ball.senses import see
     file=tmp_path/'long.mp4'

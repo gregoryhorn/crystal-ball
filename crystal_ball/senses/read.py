@@ -114,7 +114,11 @@ def _read_text(file, at=None, config=None):
     from ..core import review_stage
     from ..frames import probe
     cfg=config or load(); file=str(Path(file).resolve()); meta=probe(file)
-    if at is None:
+    if meta.get('media_kind')=='image':
+        if at not in (None,0):
+            raise ValueError('timestamp outside media')
+        review={'frames':[{'time':0.0,'path':file}]}
+    elif at is None:
         review=review_stage({'file':file,'meta':meta,'cache_dir':cfg['cache_dir']})
     else:
         if not 0<=at<meta['duration']:
@@ -124,7 +128,11 @@ def _read_text(file, at=None, config=None):
             command(['ffmpeg','-nostdin','-v','error','-ss',str(at),'-i',file,'-frames:v','1','-threads','1','-q:v','2',str(p)],20)
             return {'frames':[{'time':at,'path':str(p)}],'artifact_paths':[str(p)]}
         review=Store(cfg['cache_dir']).get(file,'frame',{'at':at},produce)
-    return ocr_frames(file,review['frames'],cfg)
+    try:
+        return ocr_frames(file,review['frames'],cfg)
+    except (FileNotFoundError, RuntimeError) as exc:
+        from ..applicability import omitted
+        return {'checks':[omitted('ocr','OCR engine unavailable','unavailable')], 'diagnostic':str(exc)}
 
 
 def confirm_safe_zones(ocr,vision):

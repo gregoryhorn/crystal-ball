@@ -50,7 +50,8 @@ def export(doc, directory, fps=None):
     if fps is not None and (not math.isfinite(float(fps)) or float(fps)<=0):
         raise ValueError('fps must be positive and finite')
     path=directory/'beats.json'; atomic(path,dumps(doc))
-    output=io.StringIO(); writer=csv.writer(output)
+    # atomic() writes in text mode: leave native newline translation to it.
+    output=io.StringIO(); writer=csv.writer(output,lineterminator='\n')
     writer.writerow(['marker','time_s','bar_estimate','beat_in_bar_estimate'])
     for i,time in enumerate(doc['beats']):
         writer.writerow([f'beat {i+1}',f'{time:.6f}',i//4+1,i%4+1])

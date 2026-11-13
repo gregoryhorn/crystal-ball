@@ -224,7 +224,7 @@ def test_stage_timeout_dependency_omission(media,monkeypatch):
     assert 'review' not in doc['stages'] and 'audio' not in doc['stages']
 
 
-def test_still_ocr_safe_zone_requires_shape_and_single_time(media,tmp_path):
+def test_still_ocr_safe_zone_requires_shape_and_single_time(media,tmp_path,ocr_required):
     req={'file':str(media['image']),'run_dir':str(tmp_path),'meta':core.probe(media['image']),'platform':'custom','rules':{'terms':[]},'config':load()}
     review=core.run_stage('review',req)
     result=core.run_stage('ocr',{**req,'review':review})

@@ -10,9 +10,13 @@ def test_no_cwd_or_relative_hijack(tmp_path,monkeypatch):
     name='ffmpeg.exe' if os.name=='nt' else 'ffmpeg'
     for root in (cwd,trusted):
         p=root/name; p.write_bytes(b'fixture'); p.chmod(0o755)
-    env={'PATH':os.pathsep.join(['','.',str(cwd),str(trusted)]),'PATHEXT':'.EXE;.CMD;.BAT'}
+    env={'PATH':os.pathsep.join(['','.',str(cwd),str(trusted),str(trusted)]),'PATHEXT':'.EXE;.CMD;.BAT'}
     assert resolve_tool('ffmpeg',env)==str(trusted/name)
     assert trusted_path(env)==str(trusted)
+    if os.name=='nt':
+        env['PATH']+=os.pathsep+str(trusted).swapcase()
+        assert trusted_path(env)==str(trusted)
+        assert resolve_tool('ffmpeg',env)==str(trusted/name)
 
 
 @pytest.mark.parametrize('name',['engine.cmd','engine.bat','C:/engine.CMD'])

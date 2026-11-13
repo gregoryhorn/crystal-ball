@@ -104,7 +104,8 @@ def timecode(seconds, fps):
 
 def export(doc, directory):
     directory=Path(directory); directory.mkdir(parents=True,exist_ok=True)
-    out=io.StringIO(); writer=csv.writer(out)
+    # atomic() writes in text mode: leave native newline translation to it.
+    out=io.StringIO(); writer=csv.writer(out,lineterminator='\n')
     writer.writerow(['shot','start','end','duration','cut_type','thumbnail'])
     for shot in doc['shots']:
         writer.writerow([shot[k] for k in ('shot','start','end','duration','cut_type','thumbnail')])

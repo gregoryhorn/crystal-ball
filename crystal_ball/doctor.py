@@ -23,7 +23,8 @@ def doctor(config=None):
     def failed(name, status, exc, suffix=''):
         failure=error_result(exc,name,cfg['cache_dir'])
         logs.append(failure['log'])
-        add(name,status,(failure['error']+suffix)[:240])
+        detail = ('Not checked: ' if status == 'WARN' else '') + failure['error'] + suffix
+        add(name,status,detail[:240])
     modules={}
     for name in ('numpy','PIL'):
         try:

@@ -54,7 +54,7 @@ def test_real_signal_clips(clips, tmp_path, name, check, status):
     assert next(r for r in result["checks"] if r["id"] == check)["status"] == status, result
 
 
-def test_real_ocr_safe_zone_and_misspelling(clips, tmp_path):
+def test_real_ocr_safe_zone_and_misspelling(clips, tmp_path, ocr_required):
     req = request(clips["text"], tmp_path, "shorts", expect_text=["NEW PLACES"])
     review = q.run_stage("review", req)
     assert len(review["frames"]) >= 5, review
@@ -231,17 +231,17 @@ def test_hooks_debounce_once_profile_and_ack(tmp_path, monkeypatch):
         path.write_text("one")
         for _ in range(10):
             hooks.queue("a", path)
-        wait_for(lambda: hooks.sessions["a"]["files"][str(path)]["result"])
+        wait_for(lambda: hooks.sessions["a"]["files"][h.identity(path)]["result"])
         assert len(calls) == 1
         assert "QC render.mp4: FAIL" in hooks.pre_llm_call(session_id="a")["context"]
         assert hooks.pre_llm_call(session_id="a") is None
         assert hooks.pre_llm_call(session_id="b") is None
-        assert hooks.sessions["a"]["files"][str(path)]["nudged"]
+        assert hooks.sessions["a"]["files"][h.identity(path)]["nudged"]
         assert hooks.pre_verify(session_id="a") is None
         path.write_text("changed length")
         hooks.queue("a", path)
         wait_for(lambda: len(calls) == 2)
-        wait_for(lambda: hooks.sessions["a"]["files"][str(path)]["result"])
+        wait_for(lambda: hooks.sessions["a"]["files"][h.identity(path)]["result"])
         hooks.acknowledge("a", path, calls and check())
         assert hooks.pre_verify(session_id="a") is None
         assert hooks.pre_verify(session_id="a", attempt=hooks.max_nudges) is None
@@ -283,11 +283,13 @@ def test_hook_concurrency_and_hot_path(tmp_path, monkeypatch):
         hooks.close()
 
 
-def test_candidates_and_registration(monkeypatch):
-    paths = h.candidate_paths({"command": 'ffmpeg -i /input.mp4 -c copy "/a path/output.mp4"'}, cwd="/x")
-    assert paths == ["/a path/output.mp4"]
+def test_candidates_and_registration(tmp_path, monkeypatch):
+    source = tmp_path / "input.mp4"
+    output = tmp_path / "a path" / "output.mp4"
+    paths = h.candidate_paths({"command": f'ffmpeg -i "{source}" -c copy "{output}"'}, cwd=str(tmp_path))
+    assert paths == [str(output)]
     assert h.Hooks.ignored("/project/cache/a.mp4")
-    assert h.candidate_paths({"command": "npx remotion render Comp out/movie.mp4"}, cwd="/x") == ["/x/out/movie.mp4"]
+    assert h.candidate_paths({"command": "npx remotion render Comp out/movie.mp4"}, cwd=str(tmp_path)) == [str(tmp_path / "out" / "movie.mp4")]
     spec = importlib.util.spec_from_file_location("test_video_quality_plugin", PLUGIN / "__init__.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -344,7 +346,7 @@ def test_post_hook_background_integration(tmp_path, monkeypatch):
             hooks.post_tool_call(tool_name="terminal", args={"command": f"ffmpeg -i input.mov '{video}'"}, session_id="s")
         assert time.monotonic() - before < .2
         wait_for(lambda: len(calls) == 1)
-        wait_for(lambda: hooks.sessions["s"]["files"][str(video)]["result"])
+        wait_for(lambda: hooks.sessions["s"]["files"][h.identity(video)]["result"])
         assert hooks.pre_llm_call(session_id="s")["context"].startswith("QC render.mp4: PASS")
         assert hooks.pre_llm_call(session_id="s") is None
     finally:

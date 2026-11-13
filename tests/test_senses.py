@@ -16,10 +16,28 @@ from crystal_ball.senses import hear, hear_worker, read, see
 def test_config_precedence(tmp_path,monkeypatch):
     # Explicit env > cwd > user config, and key overrides > TOML.
     monkeypatch.delenv('CRYSTAL_BALL_CONFIG')
-    monkeypatch.setenv('HOME',str(tmp_path/'user'))
-    user=tmp_path/'user/.config/crystal-ball/config.toml'; user.parent.mkdir(parents=True)
+    home=tmp_path/'user'
+    monkeypatch.setenv('HOME',str(home))
+    monkeypatch.setenv('USERPROFILE',str(home))
+    monkeypatch.setenv('APPDATA',str(home/'AppData/Roaming'))
+    user=home/'.config/crystal-ball/config.toml'; user.parent.mkdir(parents=True)
     user.write_text('cache_dir="user-cache"\n')
     work=tmp_path/'work'; work.mkdir(); monkeypatch.chdir(work)
+    from crystal_ball.platforms.paths import cache_home
+    from crystal_ball.config import DEFAULTS
+    expected_device='cpu' if os.name=='nt' else 'cuda'
+    assert DEFAULTS['hear']['device']==expected_device
+    assert DEFAULTS['see']['device']==expected_device
+    expected_cache=(Path(os.environ.get('LOCALAPPDATA',str(home/'AppData/Local')))/'crystal-ball/cache'
+                    if os.name=='nt' else '~/.cache/crystal-ball')
+    assert cache_home()==str(expected_cache)
+    if os.name=='nt':
+        roaming=home/'AppData/Roaming/crystal-ball/config.toml'
+        roaming.parent.mkdir(parents=True)
+        roaming.write_text('cache_dir="roaming-cache"\n')
+        user.unlink()
+        assert load()['cache_dir']==str(roaming.parent/'roaming-cache')
+        user.write_text('cache_dir="user-cache"\n')
     assert load()['cache_dir']==str(user.parent/'user-cache')
     local=work/'crystal-ball.toml'; local.write_text('cache_dir="local-cache"\n')
     assert load()['cache_dir']==str(work/'local-cache')

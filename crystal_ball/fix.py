@@ -52,7 +52,10 @@ def apply_fix(doc,force=False,config=None):
             source_audio=next(s for s in streams if s['codec_type']=='audio')
             codec=source_audio.get('codec_name','aac')
             encoder={'opus':'libopus','vorbis':'libvorbis','mp3':'libmp3lame'}.get(codec,codec)
-            cmd=['ffmpeg','-nostdin','-v','error','-i',str(path),'-map','0','-c','copy','-c:a',encoder,'-ar',str(source_audio.get('sample_rate','48000')),'-af',filt,'-t',str(probe(path)['duration']),'-n',str(target)]
+            # FFmpeg 9 can pass loudnorm's large frames through to FLAC, whose
+            # native block-size limit is 65535. Request the standard 4608 block.
+            encoder_options=['-frame_size:a','4608'] if codec=='flac' else []
+            cmd=['ffmpeg','-nostdin','-v','error','-i',str(path),'-map','0','-c','copy','-c:a',encoder,*encoder_options,'-ar',str(source_audio.get('sample_rate','48000')),'-af',filt,'-t',str(probe(path)['duration']),'-n',str(target)]
             command(cmd,240)
             after=probe(target)['streams']
             if sorted(s['codec_type'] for s in streams)!=sorted(s['codec_type'] for s in after):

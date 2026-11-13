@@ -116,10 +116,23 @@ assert core.core_media_python(req['config']) == req['config']['see']['python']
 review=core.run_stage('review',req)
 assert review.get('frames'), review
 ocr=core.run_stage('ocr',{**req,'review':review})
-assert ocr.get('lines') == [], ocr
+from crystal_ball.platforms.executables import resolve_tool
+try:
+    resolve_tool('tesseract')
+    has_ocr=True
+except FileNotFoundError:
+    has_ocr=False
+def check_ocr(value):
+    if has_ocr:
+        assert value.get('lines') == [], value
+    else:
+        item=value['checks'][0]
+        assert item['status']=='SKIP' and item['skip_reason']=='unavailable', value
+        assert item['summary']=='Not checked: OCR engine unavailable', value
+check_ocr(ocr)
 editing=core.run_stage('editing',req)
 assert {r['id']:r['status'] for r in editing['checks']} == {'flash':'PASS','pacing':'PASS'}, editing
-assert read_text(req['file'],0,req['config'])['lines']==[]
+check_ocr(read_text(req['file'],0,req['config']))
 assert core.run_stage('audio',req)['checks'][0]['summary']=='no audio stream'
 # No audio makes the balance worker fail cleanly at ffmpeg, rather than on numpy.
 try:
@@ -286,7 +299,7 @@ def test_compact_unavoidable_overflow_retains_mandatory_evidence():
     assert raw['not_checked_omitted_count']==0
 
 
-def test_maintenance_cli_and_hermes_reports_agree(tmp_path):
+def test_maintenance_cli_and_hermes_reports_agree(tmp_path,ocr_required):
     video=tmp_path/'text.mp4'
     subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
                     'color=c=0x173f65:s=720x1280:r=25:d=3','-vf',

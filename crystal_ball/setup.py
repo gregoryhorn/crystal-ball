@@ -12,7 +12,8 @@ def instructions(engine=None):
     import sys
     if os.name=='nt':
         from .engines.setup.recipes import requirements_root
-        lines=['Print-only: nothing installed. Use setup --install for one-confirm managed CPU setup.',
+        lines=['Print-only commands: nothing installed. Use setup --install for one-confirm managed CPU setup.',
+               'Run the following commands in PowerShell; no shell activation is required.',
                'FFmpeg/ffprobe >=6.1 and optional Tesseract are external native tools on trusted PATH.',
                'Microsoft Visual C++ x64 runtime: https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist',
                "TOML paths: python = 'C:\\Crystal Ball\\hear\\Scripts\\python.exe' (literal quotes)"]

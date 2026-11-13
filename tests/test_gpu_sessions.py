@@ -10,6 +10,14 @@ from crystal_ball.senses import see, hear_worker
 
 
 @pytest.fixture
+def clip_cuda(monkeypatch):
+    # Windows intentionally defaults to CPU; GPU tests must opt in explicitly.
+    cfg=see.load()
+    cfg['see']['device']='cuda'
+    monkeypatch.setattr(see,'load',lambda:cfg)
+
+
+@pytest.fixture
 def broker(monkeypatch):
     events=[]
     class Lease:
@@ -53,7 +61,7 @@ def test_failed_cleanup_does_not_release(broker):
     assert broker==['acquire','complete','stop']
 
 
-def test_clip_without_cuda_preserves_cpu_fallback(monkeypatch,broker):
+def test_clip_without_cuda_preserves_cpu_fallback(monkeypatch,broker,clip_cuda):
     monkeypatch.setattr(see,'_session',None)
     monkeypatch.setitem(sys.modules,'torch',SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:False)))
     assert see.device()=='cpu'
@@ -62,8 +70,25 @@ def test_clip_without_cuda_preserves_cpu_fallback(monkeypatch,broker):
     see.close_models()
 
 
+def test_clip_explicit_cpu_does_not_acquire_or_probe_cuda(monkeypatch):
+    cfg=see.load()
+    cfg['see']['device']='cpu'
+    monkeypatch.setattr(see,'load',lambda:cfg)
+    monkeypatch.setattr(see,'_session',None)
+    def acquire(**kw): pytest.fail('explicit CPU must not acquire')
+    class NoCuda:
+        def __getattr__(self,name): pytest.fail('CPU touched CUDA: '+name)
+    monkeypatch.setitem(sys.modules,'gpu_broker',SimpleNamespace(acquire=acquire))
+    monkeypatch.setitem(sys.modules,'torch',SimpleNamespace(cuda=NoCuda()))
+    try:
+        assert see.device()=='cpu'
+        assert see.ENGINE_INFO['fallback_reason'] is None
+    finally:
+        see.close_models()
+
+
 @pytest.mark.parametrize('fail',[False,True])
-def test_clip_command_owns_load_inference_and_cleanup(monkeypatch,broker,fail):
+def test_clip_command_owns_load_inference_and_cleanup(monkeypatch,broker,clip_cuda,fail):
     see._session=None
     see._owned_models.clear()
     class Model:
@@ -146,7 +171,9 @@ def test_hear_cleanup_failure_retains_lease_and_cpu_retry(monkeypatch,broker,oom
     assert broker==['acquire','complete','failed-unload','stop']
 
 
-def test_clip_denied_path_does_not_touch_cuda(monkeypatch):
+def test_clip_denied_path_does_not_touch_cuda(monkeypatch,clip_cuda):
+    def denied(**kw): raise RuntimeError('admission denied')
+    monkeypatch.setitem(sys.modules,'gpu_broker',SimpleNamespace(acquire=denied))
     class NoCuda:
         def __getattr__(self,name): pytest.fail('CPU touched CUDA: '+name)
     class Model:

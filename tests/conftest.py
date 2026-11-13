@@ -23,6 +23,26 @@ def isolated_config(tmp_path,monkeypatch,request):
 
 
 @pytest.fixture
+def ocr_required(tmp_path):
+    """Skip real OCR assertions only after verifying absent OCR is Not checked."""
+    from crystal_ball.platforms.executables import resolve_tool
+    try:
+        resolve_tool('tesseract')
+    except FileNotFoundError:
+        from PIL import Image
+        from crystal_ball.senses.read import ocr_stage, read_text
+        image=tmp_path/'no-ocr.png'
+        Image.new('RGB',(32,32),'white').save(image)
+        result=ocr_stage({'file':str(image),'review':{'frames':[{'time':0.0,'path':str(image)}]}})
+        direct=read_text(image)
+        for value in (result,direct):
+            check=value['checks'][0]
+            assert check['status']=='SKIP' and check['skip_reason']=='unavailable'
+            assert check['summary']=='Not checked: OCR engine unavailable'
+        pytest.skip('Tesseract absent; stage and direct API report Not checked')
+
+
+@pytest.fixture
 def native_engine(tmp_path):
     """Real native interpreter with engine-local launch logging/module hiding."""
     import venv
