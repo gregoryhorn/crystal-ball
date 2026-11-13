@@ -29,3 +29,38 @@ archive/wheel contents, and record live inference evidence on your machine.
 Use `python scripts/build_release.py` with `requirements/build.lock` installed.
 The script normalizes source archive ownership and scans every archive member.
 Release upload and a git remote are deliberately outside the build workflow.
+
+Native Windows: use a dedicated CPython 3.11 x64 development venv and external
+ffmpeg/ffprobe >=6.1 and Tesseract (English data for OCR tests). From PowerShell:
+
+```powershell
+./scripts/windows/verify.ps1 -Python $Python -Scratch $Scratch
+```
+
+$Python is the absolute dedicated venv Scripts/python.exe, $Scratch an approved
+absolute temporary root. The wrapper makes one run directory, sets offline/temp
+variables only for this process, runs all non-live tests/privacy/build and
+propagates failure. It downloads/installs nothing. Install requirements/test.lock
+and requirements/build.lock in that dev venv beforehand. Windows uses its Arial
+font for synthetic title fixtures; Linux retains DejaVu. No broad core skips.
+
+After installing the candidate wheel into a separate dedicated test venv, run
+its interpreter from outside the checkout (no activation or profile install):
+
+```powershell
+& $WheelPython -I "$Repo/scripts/windows/wheel_smoke.py" --scratch $Scratch
+```
+
+This generates synthetic media and reopens CLI/tool reports and a contact sheet,
+checks the installed recipe resources and compact counts, and prints observed
+results. It uses the approved scratch root and downloads no optional models.
+It does not prove native Hermes UI integration or real model inference.
+
+Windows engine locks are grouped in requirements/windows. They are hashed
+wheel-only CPython 3.11 x64 sets; Torch uses its separate official CPU index.
+scripts/windows/freeze_recipes.py verifies target-Windows dependency markers
+(including colorama) from downloaded wheel metadata before freezing. Wheel
+resolution on Linux is not native import/inference evidence. Do not install
+Windows lockfiles on Linux or Linux CUDA lockfiles on Windows. Ordinary tests
+never download models or contact the production broker. See the Windows
+as-built for native machine acceptance still outstanding.

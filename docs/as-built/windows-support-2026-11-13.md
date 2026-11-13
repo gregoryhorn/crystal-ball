@@ -168,3 +168,12 @@ rewrite or altered media contracts. Native core/inference/host sign-off is not
 claimed. Next observable outcome is running the existing native harness and the
 above acceptance actions on an accessible authorized Windows machine, not a
 release, version bump or deployment.
+
+Local checkpoints: 4403a5c paths/storage; 6655a65 owned processes/core runtime;
+dc78c8f consent-based setup/packaged recipes. The subsequent harness commit
+contains Windows CI, verify.ps1, wheel_smoke.py, freeze_recipes.py, real Unicode
+workflow tests, staged-build isolation and contributor instructions. No live
+installation or remote write occurred. The final rebuilt wheel was force-reinstalled
+only into the scratch test venv and reran the isolated smoke: exit 0, identical
+counts and five frames. The candidate is the local main commit containing this
+record (inspect `git log -1`); no release is implied.

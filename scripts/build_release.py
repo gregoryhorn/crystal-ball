@@ -6,9 +6,10 @@ import io
 import os
 import tarfile
 import zipfile
+import tempfile
 from pathlib import Path
 from setuptools import build_meta
-from privacy_scan import scan_text
+from privacy_scan import scan_text, files
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -51,10 +52,22 @@ def inspect_archive(path):
 def main():
     os.chdir(ROOT)
     out=ROOT/'dist'; out.mkdir(exist_ok=True)
-    # Keep detailed build chatter in an ignored local log.
-    with (out/'build.log').open('w') as log, contextlib.redirect_stdout(log):
-        wheel=out/build_meta.build_wheel(str(out))
-        source=out/build_meta.build_sdist(str(out))
+    # Stage publishable source only. All build/egg-info intermediates use the
+    # caller's approved TMPDIR, not the checkout or a live Hermes environment.
+    with tempfile.TemporaryDirectory(prefix='cb-build-') as temporary:
+        stage=Path(temporary)/'source'; stage.mkdir()
+        for path in files(ROOT):
+            if path.is_file() and not path.is_symlink():
+                dest=stage/path.relative_to(ROOT)
+                dest.parent.mkdir(parents=True,exist_ok=True)
+                dest.write_bytes(path.read_bytes())
+        os.chdir(stage)
+        try:
+            with (out/'build.log').open('w',encoding='utf-8') as log, contextlib.redirect_stdout(log):
+                wheel=out/build_meta.build_wheel(str(out))
+                source=out/build_meta.build_sdist(str(out))
+        finally:
+            os.chdir(ROOT)
     normalize_sdist(source)
     for path in (wheel,source):
         print(f'{path.name}: PASS ({inspect_archive(path)} privacy-scanned members)')
