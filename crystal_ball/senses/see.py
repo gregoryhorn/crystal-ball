@@ -61,6 +61,14 @@ def device():
     from ..gpu import Session
     if _session is None:
         _session = Session(load()['see']['min_free_vram_gb'], purpose='CLIP embeddings', model='clip')
+        if _session.device == 'cuda':
+            import torch
+            if not torch.cuda.is_available():
+                cleanup_reason = _session.close(lambda: None)
+                _session.device = 'cpu'
+                _session.reason = 'CUDA unavailable; CPU selected'
+                if cleanup_reason and 'lease retained' in cleanup_reason:
+                    _session.reason += '; ' + cleanup_reason
     ENGINE_INFO.update(engine='clip-'+_session.device, fallback_reason=_session.reason)
     return _session.device
 

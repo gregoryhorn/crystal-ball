@@ -21,4 +21,20 @@ git diff --check
 
 Observed: focused suite initially 18 passed (0.29s). Final full non-live suite after additional cleanup regressions: **207 passed, 8 deselected, 10 subtests passed in 25.51s**, exit 0. Privacy scan: PASS, 91 publishable files, zero findings, exit 0. AST measurement across changed Python files: largest function 81 lines (`cmd_index`); diff whitespace check passed. The supplied broker scratch venv lacked numpy (two collection errors, exit 2); the already provisioned system interpreter ran the suite without installing anything.
 
-Limitations: no live CUDA, local model, installed plugin, cross-tool contention, production state or service integration was exercised. The broker's per-process-zero-memory completion rule is intentionally not weakened; persistent runtime memory can retain uncertainty until process exit/reconciliation. Other GPU callers and service capability gaps remain outside this repository's adoption claim.
+- Follow-up regression: CLIP's original CUDA-unavailable CPU decision is
+  preserved after a broker grant and before model transfer. Checking availability
+  before admission was rejected by the existing no-CUDA-on-denial regression;
+  that guard remains unchanged. The new unavailable-CUDA test initially returned
+  CUDA and failed. It now selects CPU and completes/releases the unused lease.
+  Fake CUDA-lifetime fixtures explicitly advertise availability; the denied path
+  still never touches torch.cuda, and no safety assertion was weakened.
+
+Final parent verification after the CUDA-unavailable follow-up: **208 passed,
+8 deselected, 10 subtests passed in 24.45s**, exit 0, using `/usr/bin/python3`
+and the same non-live selection. Focused admission/session verification: 22
+passed in 0.23s. The broker checkout's three fake-based integration tests also
+exercise actual Crystal Ball/Breeze admission against the real broker core;
+this extends the earlier repository-local boundary, not to live CUDA/services.
+
+Limitations: no live CUDA, local model, installed plugin, production state or
+live service integration was exercised. The broker's per-process-zero-memory completion rule is intentionally not weakened; persistent runtime memory can retain uncertainty until process exit/reconciliation. Other GPU callers and service capability gaps remain outside this repository's adoption claim.

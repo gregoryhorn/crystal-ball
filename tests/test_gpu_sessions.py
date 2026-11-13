@@ -53,6 +53,15 @@ def test_failed_cleanup_does_not_release(broker):
     assert broker==['acquire','complete','stop']
 
 
+def test_clip_without_cuda_preserves_cpu_fallback(monkeypatch,broker):
+    monkeypatch.setattr(see,'_session',None)
+    monkeypatch.setitem(sys.modules,'torch',SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:False)))
+    assert see.device()=='cpu'
+    assert 'CUDA unavailable' in see.ENGINE_INFO['fallback_reason']
+    assert broker==['acquire','complete','clean','release','stop']
+    see.close_models()
+
+
 @pytest.mark.parametrize('fail',[False,True])
 def test_clip_command_owns_load_inference_and_cleanup(monkeypatch,broker,fail):
     see._session=None
@@ -67,7 +76,7 @@ def test_clip_command_owns_load_inference_and_cleanup(monkeypatch,broker,fail):
             return Model()
     monkeypatch.setitem(sys.modules,'transformers',SimpleNamespace(CLIPModel=Loader,CLIPProcessor=Loader))
     monkeypatch.setitem(sys.modules,'torch',SimpleNamespace(float16='fp16',float32='fp32',set_num_threads=lambda n:None,
-        cuda=SimpleNamespace(synchronize=lambda:broker.append('sync'),empty_cache=lambda:broker.append('empty'))))
+        cuda=SimpleNamespace(is_available=lambda:True,synchronize=lambda:broker.append('sync'),empty_cache=lambda:broker.append('empty'))))
     @see.model_work
     def command():
         model,proc,dev=see.load_model('fake')
