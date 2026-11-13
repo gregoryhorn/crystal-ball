@@ -14,3 +14,8 @@ def isolated_config(tmp_path,monkeypatch,request):
     config.write_text('cache_dir = '+repr(str(tmp_path/'cache'))+'\n[judge]\nbackend = "off"\n[hear]\npython = "missing-asr-interpreter"\n')
     monkeypatch.setenv('CRYSTAL_BALL_CONFIG',str(config))
     monkeypatch.setenv('HF_HUB_OFFLINE','1')
+    # Non-live tests must never open the machine-local broker's production state.
+    from types import SimpleNamespace
+    def unavailable(**kwargs):
+        raise RuntimeError('isolated test broker unavailable')
+    monkeypatch.setitem(sys.modules,'gpu_broker',SimpleNamespace(acquire=unavailable))

@@ -12,22 +12,24 @@ from crystal_ball.senses.hear_worker import Engine
 
 
 def test_gpu_admission(monkeypatch):
-    for free,expected in [(2200,'cpu'),(8000,'cuda')]:
-        monkeypatch.setattr(gpu.subprocess,'run',lambda *a,**kw:SimpleNamespace(stdout=str(free)))
-        dev,reason=gpu.admit(3.5)
-        assert dev==expected
-        assert bool(reason)==(expected=='cpu')
-    monkeypatch.setattr(gpu.subprocess,'run',lambda *a,**kw: (_ for _ in ()).throw(FileNotFoundError()))
-    assert gpu.admit()[0]=='cpu'
-    cpu_torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:False))
-    assert gpu.admit(torch=cpu_torch)==('cpu','CUDA unavailable; CPU selected')
+    # Intentional contract change: tuple admission can never grant unleased CUDA.
+    def forbidden():
+        raise AssertionError('legacy admission must not initialize CUDA')
+    cpu_torch=SimpleNamespace(cuda=SimpleNamespace(is_available=forbidden))
+    dev,reason=gpu.admit(torch=cpu_torch)
+    assert dev=='cpu' and reason
 
 
 @pytest.mark.parametrize('oom_at',[None,'load','runtime'])
 def test_hear_cpu_before_cpp_and_oom_retry(monkeypatch,oom_at):
     devices=[]; audio=np.zeros(16000,dtype='<f4').tobytes()
     monkeypatch.setattr('crystal_ball.senses.hear_worker.subprocess.run',lambda *a,**kw:SimpleNamespace(stdout=audio))
-    monkeypatch.setattr(gpu,'admit',lambda *a:('cuda',None) if oom_at else ('cpu','insufficient free VRAM'))
+    class Lease:
+        def complete_gpu_work(self,cleanup): cleanup()
+        def release(self): pass
+        def stop_heartbeat(self): pass
+    if oom_at:
+        monkeypatch.setitem(sys.modules,'gpu_broker',SimpleNamespace(acquire=lambda **kw:Lease()))
     class Model:
         def __init__(self,*a,**kw):
             self.dev=kw['device']; devices.append(kw)

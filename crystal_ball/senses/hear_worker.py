@@ -14,10 +14,10 @@ class Engine:
         # PyAV is deliberately bypassed: float32 PCM, mono, 16 kHz.
         raw=subprocess.run(['ffmpeg','-nostdin','-v','error','-i',req['file'],'-vn','-ac','1','-ar','16000','-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180).stdout
         samples=np.frombuffer(raw,dtype='<f4').astype(np.float32,copy=False)
-        from crystal_ball.gpu import admit, is_oom
-        device=req['device']; reason=None
-        if device=='cuda':
-            device,reason=admit(req.get('min_free_vram_gb',3.5))
+        from crystal_ball.gpu import Session, is_oom
+        session=Session(req.get('min_free_vram_gb',3.5), purpose='Whisper transcription',
+                        model=req['model'], enabled=req['device']=='cuda')
+        device=session.device; reason=session.reason
         def run(device):
             key=(req['model'],device,int(req.get('cpu_threads',4)))
             if key not in self.models:
@@ -29,14 +29,39 @@ class Engine:
                 out.append({'start':s.start,'end':s.end,'text':s.text.strip(),'words':[{'start':w.start,'end':w.end,'word':w.word.strip(),'probability':w.probability} for w in s.words or []]})
             return out,info
         try:
-            out,info=run(device)
-        except Exception as exc:
-            if device!='cuda' or not is_oom(exc):
-                raise
-            self.models={key:model for key,model in self.models.items() if key[1]!='cuda'}
-            device='cpu'; reason='CUDA out of memory; retry on CPU int8'
-            out,info=run(device)
-        return {'engine':'faster-whisper-'+device,'fallback_reason':reason,'language':info.language,'duration':len(samples)/16000,'segments':out,'text':' '.join(s['text'] for s in out)}
+            retry=False
+            try:
+                out,info=run(device)
+            except Exception as exc:
+                if device!='cuda' or not is_oom(exc):
+                    raise
+                retry=True
+            if retry:
+                # CPU retry may proceed, but failed GPU cleanup keeps occupancy.
+                session.close(self.drop_cuda_models)
+                device='cpu'; reason='CUDA out of memory; retry on CPU int8'
+                out,info=run(device)
+            result={'engine':'faster-whisper-'+device,'fallback_reason':reason,'language':info.language,'duration':len(samples)/16000,'segments':out,'text':' '.join(s['text'] for s in out)}
+        finally:
+            cleanup_reason=session.close(self.drop_cuda_models)
+            if cleanup_reason and 'lease retained' in cleanup_reason:
+                print(cleanup_reason,file=sys.stderr)
+        if cleanup_reason and 'lease retained' in cleanup_reason:
+            result['cleanup_reason']=cleanup_reason
+        return result
+
+    def drop_cuda_models(self):
+        """CTranslate2 owns its allocator; unload/destroy only our CUDA models."""
+        import gc
+        for key in list(self.models):
+            if key[1]=='cuda':
+                model=self.models[key]
+                backend=getattr(model,'model',None)
+                if backend is not None:
+                    backend.unload_model()
+                del self.models[key]
+                del model,backend
+        gc.collect()
 
 def serve(engine=None, source=None, sink=None):
     engine=engine or Engine(); source=source or sys.stdin; sink=sink or sys.stdout

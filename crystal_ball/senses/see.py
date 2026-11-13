@@ -51,12 +51,52 @@ def collect(paths):
 ENGINE_INFO={}
 
 
+_session = None
+_owned_models = []
+
+
 def device():
-    import torch
-    from ..gpu import admit
-    dev,reason=admit(load()['see']['min_free_vram_gb'],torch)
-    ENGINE_INFO.update(engine='clip-'+dev,fallback_reason=reason)
-    return dev
+    """Acquire before model load; the command retains authority until cleanup."""
+    global _session
+    from ..gpu import Session
+    if _session is None:
+        _session = Session(load()['see']['min_free_vram_gb'], purpose='CLIP embeddings', model='clip')
+    ENGINE_INFO.update(engine='clip-'+_session.device, fallback_reason=_session.reason)
+    return _session.device
+
+
+def close_models():
+    """Drop only this command's CUDA references, then validate broker completion."""
+    global _session
+    if _session is None:
+        return
+    def cleanup():
+        import gc
+        import torch
+        torch.cuda.synchronize()
+        for model in _owned_models:
+            model.to('cpu')
+        _owned_models.clear()
+        gc.collect()
+        torch.cuda.empty_cache()
+    reason = _session.close(cleanup)
+    _owned_models.clear()
+    _session = None
+    if reason and 'lease retained' in reason:
+        ENGINE_INFO['cleanup_reason'] = reason
+        log(reason)
+
+
+def model_work(fn):
+    """Bound lazy model load and every return/error to one owned lifetime."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            close_models()
+    return wrapped
 
 
 def load_model(name):
@@ -67,10 +107,16 @@ def load_model(name):
     dev = device()
     mid = model_id(name)
     try:
-        model = CLIPModel.from_pretrained(mid, local_files_only=True, torch_dtype=torch.float16 if dev == 'cuda' else torch.float32).to(dev).eval()
+        model = CLIPModel.from_pretrained(mid, local_files_only=True, torch_dtype=torch.float16 if dev == 'cuda' else torch.float32)
+        if dev == 'cuda':
+            _owned_models.append(model)
+        model = model.to(dev).eval()
     except Exception as exc:
         if dev!='cuda' or not is_oom(exc):
             raise
+        for owned in _owned_models:
+            owned.to('cpu')
+        _owned_models.clear()
         torch.cuda.empty_cache()
         dev='cpu'
         ENGINE_INFO.update(engine='clip-cpu',fallback_reason='CUDA out of memory at load; retry on CPU')
@@ -193,6 +239,7 @@ def save_index(idir, meta, emb):
                 os.remove(p)
 
 
+@model_work
 def cmd_index(a):
     import numpy as np
     if a.cap <= 0 or not math.isfinite(a.every) or a.every <= 0:
@@ -272,9 +319,6 @@ def cmd_index(a):
                 except OSError as ex:
                     log("  cannot remove thumbnail", fr["thumb"], ex)
         log(f"  done: {len(frames)} frames from {len(entries)} files in {time.time()-t0:.0f}s")
-    if dev == "cuda":
-        del model
-        import torch; torch.cuda.empty_cache()
     return 0
 
 
@@ -338,6 +382,7 @@ def index_file(f, a, tdir, model, proc, dev):
         return frames, e, entry, (model, proc, dev)
 
 
+@model_work
 def cmd_query(a):
     import numpy as np
     mid = model_id(a.model)
