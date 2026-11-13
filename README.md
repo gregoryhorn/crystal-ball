@@ -24,8 +24,10 @@ caption margins and delivery-platform specifications.
 
 ## Quick start
 
-Python 3.11+, Linux or macOS, ffmpeg/ffprobe 6.1+ and Tesseract are required.
-The shared artifact lock uses POSIX file locking. GPU engines are optional.
+Python 3.11+ and ffmpeg/ffprobe 6.1+ are required. Native Windows support targets
+Windows 10/11 x64 with CPython 3.11; Linux/macOS retain their existing commands.
+Core analysis needs only numpy/Pillow. Tesseract, ASR, CLIP, rhythm and GPU
+engines are optional; missing senses are not checked, never a PASS.
 
 ```sh
 python3 -m venv .venv
@@ -39,17 +41,61 @@ cp crystal-ball.example.toml crystal-ball.toml
 
 `python -m crystal_ball` supports the same commands. Package distribution name:
 `crystal-ball-media`; import name: `crystal_ball`; executable: `crystal-ball`.
-Built-in model loaders never download models. Setup **prints** commands, including
+Built-in analysis model loaders never download models. Setup **prints** commands, including
 explicit user-run model downloads. Run only the engines you need. GPU packages
 and models are not installed into Hermes by the plugin.
+
+### Native Windows (PowerShell, no activation)
+
+```powershell
+py -3.11 -m venv .venv
+& ./.venv/Scripts/python.exe -m pip install .
+& ./.venv/Scripts/python.exe -m crystal_ball doctor --json
+& ./.venv/Scripts/python.exe -m crystal_ball check './media/render.mp4' --platform youtube --json
+& ./.venv/Scripts/python.exe -m crystal_ball setup
+# Optional: one interactive confirmation for isolated CPU engines/models/config.
+& ./.venv/Scripts/python.exe -m crystal_ball setup --install
+# Or select only hear or see: setup hear --install / setup see --install.
+```
+
+Provide native ffmpeg.exe and ffprobe.exe 6.1+ on trusted PATH (not the current
+directory); .bat/.cmd wrappers are refused. No executable download, WSL, CUDA,
+activation or execution-policy change is required. Optional Hear needs the
+Microsoft Visual C++ x64 runtime; setup reports its official prerequisite link.
+Print-only setup never installs; --install requires interactive stdin and one
+explicit yes. It creates managed generations below
+%LOCALAPPDATA%/crystal-ball/engines, verifies packages/local models offline, then
+patches only selected config keys with a backup. Failed setup retains the prior
+config and failed generation/downloads; correct the reported error and rerun.
+No user-managed environment is overwritten or automatically removed.
+
+Windows defaults to CPU int8 Hear and CPU float32 CLIP. Requested CUDA still
+requires an independently provisioned compatible machine-local GPU broker;
+seeing a GPU does not grant permission to use it. CPU work acquires no GPU lease.
+Ordinary local checks/doctor with judge off stay offline and never prompt.
+
+Use TOML literal paths, for example python = 'C:\\Media Tools\\hear\\Scripts\\python.exe',
+or forward slashes. Drive-relative C:folder and root-relative \\folder are
+ambiguous and rejected. Explicit local model paths start with ./ or a full
+drive/UNC path; identifiers such as openai/clip-vit-large-patch14 stay identifiers.
+Windows keeps an existing legacy ~/.config/crystal-ball/config.toml before
+%APPDATA%/crystal-ball/config.toml; new cache default is
+%LOCALAPPDATA%/crystal-ball/cache. Explicit configs/cache_dir always win.
+
+Open the actual returned report.md, report.html and sibling full.json. Saved
+reports/contact sheets persist without rerunning analysis; no assets are uploaded.
+Ctrl+C cancels only the owned action tree, not other applications. UNC parsing
+is supported, but initial locking/publication scope is local NTFS, not SMB.
+Native Windows execution and installed Hermes UI integration still require the
+checks recorded in docs/as-built/windows-support-2026-11-13.md.
 
 The hear engine receives mono **float32 16 kHz NumPy PCM decoded by ffmpeg**,
 not a filename: this bypasses incompatible PyAV decoders. Its persistent JSON
 worker loads each model once and can transcribe multiple files in one run.
 The launcher discovers `nvidia/cublas/lib` and `nvidia/cudnn/lib` inside the
 configured interpreter's prefix and prepends them to `LD_LIBRARY_PATH`.
-CPU mode uses int8; CUDA uses float16. Before loading, hear checks free VRAM
-(default 3.5 GiB). Insufficient/unknown free VRAM selects faster-whisper CPU
+CPU mode uses int8; CUDA uses float16. Before loading, hear requests broker
+admission (default 3.5 GiB). Missing/denied broker admission selects faster-whisper CPU
 int8 before whisper.cpp. A CUDA OOM at load or during lazy inference retries
 once on CPU. Results name `faster-whisper-cuda`, `faster-whisper-cpu` or
 `whisper.cpp` and include `fallback_reason` (null when no fallback occurred).

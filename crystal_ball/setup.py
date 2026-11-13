@@ -3,7 +3,31 @@ from pathlib import Path
 import shlex
 import sysconfig
 
+def powershell(argv):
+    return '& '+' '.join("'"+str(arg).replace("'","''")+"'" for arg in argv)
+
 def instructions(engine=None):
+    import os
+    import subprocess
+    import sys
+    if os.name=='nt':
+        from .engines.setup.recipes import requirements_root
+        lines=['Print-only: nothing installed. Use setup --install for one-confirm managed CPU setup.',
+               'FFmpeg/ffprobe >=6.1 and optional Tesseract are external native tools on trusted PATH.',
+               'Microsoft Visual C++ x64 runtime: https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist',
+               "TOML paths: python = 'C:\\Crystal Ball\\hear\\Scripts\\python.exe' (literal quotes)"]
+        for name in ([engine] if engine else ['hear','see']):
+            if name=='read':
+                lines.append('Provision Tesseract externally; set read.tessdata to the traineddata directory. No system installer is run.')
+                continue
+            exe=str(Path('.venv-'+name)/'Scripts/python.exe')
+            lines.extend([powershell([sys.executable,'-m','venv','.venv-'+name]),
+                          powershell([exe,'-m','pip','install','--require-hashes','--no-deps','-r',str(requirements_root()/'windows'/(name+'-cpu.lock'))])])
+            if name=='see':
+                lines.append(powershell([exe,'-m','pip','install','--require-hashes','--no-deps','-r',str(requirements_root()/'windows/torch-cpu.lock')]))
+            download = "from faster_whisper.utils import download_model; download_model('large-v3-turbo')" if name=='hear' else "from huggingface_hub import snapshot_download; snapshot_download('openai/clip-vit-large-patch14')"
+            lines.append(powershell([exe,'-c',download]))
+        return '\n'.join(lines)
     groups=[engine] if engine else ['hear','see','read']
     root=Path(__file__).resolve().parent.parent
     requirements=root/'requirements'

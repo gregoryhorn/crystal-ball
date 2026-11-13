@@ -2,8 +2,9 @@ include README.md LICENSE THIRD_PARTY_NOTICES.md CHANGELOG.md SECURITY.md CONTRI
 include crystal-ball.example.toml pyproject.toml .gitignore
 recursive-include crystal_ball *.py LICENSE
 recursive-include tests *.py
-recursive-include scripts *.py
+recursive-include scripts *.py *.ps1
 recursive-include requirements *.lock
+recursive-include requirements/windows *.json
 recursive-include hermes_plugin *.py *.yaml *.md
 recursive-include docs *.html .nojekyll
 recursive-include .github *.yml

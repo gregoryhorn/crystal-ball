@@ -40,12 +40,19 @@ def parser():
             a.add_argument('--music'); a.add_argument('--within-frames',type=int,default=6)
     d=sub.add_parser('doctor'); d.add_argument('--json',action='store_true')
     s=sub.add_parser('setup'); s.add_argument('engine',nargs='?',choices=['hear','see','read'])
+    s.add_argument('--install',action='store_true')
     return ap
 
 def main(argv=None):
+    for stream in (sys.stdout,sys.stderr):
+        if hasattr(stream,'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     args=vars(parser().parse_args(argv)); action=args.pop('action').replace('-','_')
     try:
         if action=='setup':
+            if args['install']:
+                from .engines.setup.install import install
+                print(dumps(install(args['engine']))); return 0
             from .setup import instructions
             print(instructions(args['engine'])); return 0
         if action=='find' and bool(args['text'])==bool(args['image']):
@@ -83,6 +90,8 @@ def main(argv=None):
             print(dumps(compact_action(action,result) if action in {'beats','scenes','cuts'} else result))
         return int(result.get('verdict')=='FAIL' or action=='doctor' and any(r['status']=='FAIL' for r in result['checks']) or result.get('code',0)!=0)
     except Exception as exc:
+        if action=='setup':
+            print(dumps({'status':'error','error':str(exc)}),file=sys.stderr); return 2
         print(dumps(error_result(exc,action)),file=sys.stderr); return 2
 if __name__=='__main__':
     sys.exit(main())

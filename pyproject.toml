@@ -27,6 +27,7 @@ markers = ["live: requires user-provided local models and engines"]
 
 [tool.setuptools.data-files]
 "share/crystal-ball/requirements" = ["requirements/*.lock"]
+"share/crystal-ball/requirements/windows" = ["requirements/windows/*.lock", "requirements/windows/*.json"]
 "share/crystal-ball" = ["crystal-ball.example.toml"]
 "share/crystal-ball/hermes_plugin/crystal-ball" = ["hermes_plugin/crystal-ball/__init__.py", "hermes_plugin/crystal-ball/plugin.yaml"]
 "share/crystal-ball/hermes_plugin/skill/crystal-ball" = ["hermes_plugin/skill/crystal-ball/SKILL.md"]

@@ -1,0 +1,4 @@
+# Official CPU index only; install after see-cpu.lock with --no-deps.
+--index-url https://download.pytorch.org/whl/cpu
+--only-binary :all:
+torch==2.9.1+cpu --hash=sha256:69b3785d28be5a9c56ab525788ec5000349ec59132a74b7d5e954b905015b992

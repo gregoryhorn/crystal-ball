@@ -1,0 +1,9 @@
+{
+  "target": {"implementation": "CPython", "python": "3.11", "os": "Windows 10/11", "architecture": "x64", "device": "cpu"},
+  "hear": {"locks": ["hear-cpu.lock"], "model": "large-v3-turbo", "precision": "int8", "seeds": {"faster-whisper": "1.2.1", "ctranslate2": "4.9.0"}},
+  "see": {"locks": ["see-cpu.lock", "torch-cpu.lock"], "model": "openai/clip-vit-large-patch14", "precision": "float32", "seeds": {"torch": "2.9.1+cpu", "transformers": "4.57.3"}},
+  "indexes": {"dependencies": "https://pypi.org/simple", "torch": "https://download.pytorch.org/whl/cpu", "models": "https://huggingface.co"},
+  "resolution": "Windows CPython 3.11 x64 wheel downloads on Linux; complete dependency markers checked against target Windows metadata; native inference not checked",
+  "external": ["native ffmpeg/ffprobe >=6.1", "Microsoft Visual C++ x64 runtime"],
+  "hashes": "Each lock records SHA256 of every selected wheel. Torch is installed in a separate invocation with --no-deps, never an extra index."
+}

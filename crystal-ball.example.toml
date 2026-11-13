@@ -1,11 +1,14 @@
 # Copy to crystal-ball.toml, or set CRYSTAL_BALL_CONFIG to a private config.
 cache_dir = "~/.cache/crystal-ball"
 # projects_root = "./media-projects"
+# Native Windows: omit cache_dir for %LOCALAPPDATA%/crystal-ball/cache.
+# Use literal quotes or forward slashes, e.g. python = 'C:\Media Tools\hear\Scripts\python.exe'.
+# setup --install writes verified isolated CPU interpreter/model paths on Windows.
 
 [hear]
 python = ".venv-hear/bin/python"
 model = "large-v3-turbo"
-device = "cuda" # use "cpu" for int8 CPU inference
+device = "cuda" # POSIX default; Windows default is "cpu" (omit to use platform default)
 min_free_vram_gb = 3.5 # admission before model load; OOM retries once on CPU
 cpu_threads = 4
 # Optional argv command; no shell. Must produce a vocals.wav below output_dir.
@@ -18,6 +21,7 @@ model = "" # local ggml model file
 
 [see]
 python = ".venv-see/bin/python"
+device = "cuda" # Windows: use "cpu", or omit for platform default
 model = "openai/clip-vit-large-patch14" # or a local model directory
 min_free_vram_gb = 2.5
 cpu_threads = 4

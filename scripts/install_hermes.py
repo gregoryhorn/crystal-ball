@@ -15,7 +15,7 @@ def digest(data):
 
 
 def portable(name):
-    if not isinstance(name, str) or PureWindowsPath(name).drive or name.startswith(('/', '\\')):
+    if not isinstance(name, str) or ':' in name or '\x00' in name or PureWindowsPath(name).drive or name.startswith(('/', '\\')):
         raise ValueError('invalid install manifest path')
     name=name.replace('\\','/')
     p=PurePosixPath(name)

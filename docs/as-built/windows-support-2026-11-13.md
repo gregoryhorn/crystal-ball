@@ -1,6 +1,7 @@
 # Windows support as-built (2026-11-13)
 
-Status: implementation in progress on main, starting at 13c62f594f5d7fa687f8a9f1ed966bc3ac41b4e9.
+Status: implemented on main and exercised on Linux; native Windows NOT CHECKED.
+Starting candidate: 13c62f594f5d7fa687f8a9f1ed966bc3ac41b4e9.
 Goal: native Windows support with unchanged media CLI/tool/report contracts and
 honest unavailable senses. No push, tag, release, version bump, live profile
 installation or profile/config changes are authorized or performed. No UI changes;
@@ -62,6 +63,108 @@ The unavailable-See tests now explicitly cover thin hosts because core-first
 routing is the intentional design change. Inference-only mocks moved from
 subprocess.run to run_owned; assertions about GPU cleanup were preserved.
 
-Next checkpoint: opt-in setup/packaging and final Linux aggregate checks. W01-W17 native
-acceptance, actual model inference and Windows installed-host integration remain
-open until real machine execution is possible under the user's permissions.
+## Setup and packaging checkpoint
+
+`engines/setup/{plan,install,recipes}.py` implements the additive CLI
+`setup [hear|see] --install`: one interactive confirmation, isolated managed
+Windows CPython 3.11 x64 CPU generations, native VC++ prerequisite check, explicit
+package/model downloads, offline probes, failed-generation records, validated
+reuse, backed-up selected-key-only TOML publication and config-race refusal.
+Default setup remains print-only; read --install refuses external installation.
+Existing media action enum/schema and package/plugin version 1.1.1 are unchanged.
+
+`requirements/windows/` contains complete hashed wheel-only Hear/See recipes and
+separate official-index Torch CPU recipe. `scripts/windows/freeze_recipes.py`
+checks target dependency markers/closure before freezing. Windows wheel downloads
+and all three offline --require-hashes checks exited 0 on Linux; they do not prove
+native imports. Metadata records external FFmpeg/VC++ prerequisites. Models stay
+out of the core/Hermes venv; judge stays off. No live inference was attempted.
+
+Nested locks/metadata are in wheel/sdist; README, CONTRIBUTING and example TOML
+have native path, PowerShell, CPU setup and recovery instructions. Installer keys
+also reject alternate-stream colon and NUL escapes. Fake-home installer checks
+cover safety without modifying any actual profile. Setup/installer focused tests:
+22 passed in 0.12s, exit 0 (before the final workflow harness checkpoint).
+
+## Final Linux evidence
+
+Commands used the dedicated scratch CPython 3.11 venv, with
+PYTHONDONTWRITEBYTECODE=1, HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1.
+`$Python` below is that venv interpreter and `$Scratch` the approved temporary root.
+Results were observed, not supplied by fixtures as claimed external execution.
+
+- `$Python -m pytest -q -rs -p no:cacheprovider --basetemp $Scratch/cb-final`:
+  257 passed, 8 skipped, 10 subtests passed in 29.32s; exit 0. All eight skips are
+  the opt-in tests/test_live.py model tests (lines 15, 37, 56, 65, 75, twice 91,
+  108). No core Windows tests were broadly skipped. This is Linux evidence only.
+- `$Python -m pytest tests/engines tests/windows -q -rs -p no:cacheprovider
+  --basetemp $Scratch/cb-handoff-tests`: 23 passed in 1.21s, exit 0.
+- `$Python scripts/build_release.py`: exit 0; wheel 87 privacy-scanned members,
+  sdist 128. Build intermediates are staged under TMPDIR, not the checkout.
+- Isolated wheel installed into a separate scratch venv and exercised outside
+  the checkout using `python -I scripts/windows/wheel_smoke.py --scratch $Scratch`
+  (script argument is its absolute source path). Exit 0: packaged resources 4;
+  doctor exit 0; completed check exit 1; 5 sampled frames; contact sheet reopens;
+  persisted Markdown/HTML/full.json reopen; CLI/real tool-worker counts agree:
+  PASS 19, WARN 2, FAIL 1, SKIP 5. Check exit 1 is the synthetic media verdict,
+  not a smoke-harness error. Optional audio is explicitly SKIP. Installed-wheel
+  model inference and actual Hermes UI are NOT CHECKED. Tesseract is present on
+  this Linux host; this smoke does not claim a fresh OCR-free machine.
+- Changed Python source measured by AST (complete decorated/nested spans):
+  405 functions, largest 100 lines, core._base_check; all <=300.
+- `git diff --check`: exit 0.
+- `$Python scripts/privacy_scan.py`: exit 1, 124 publishable files, 10 findings,
+  all in the unchanged historical gpu-broker-adoption.md lines listed above.
+  This gate remains FAIL; no scanner suppression/weakening or unrelated document
+  rewrite was performed. Archive privacy passing is not repository privacy passing.
+
+The Windows CI job and `scripts/windows/verify.ps1` are implemented, not executed
+here. Wrapper requires explicit interpreter/scratch, sets offline/temp variables,
+runs pytest/privacy/build, and stops at the first failure. The known repository
+privacy failure will stop that wrapper/CI until separately resolved. The wheel
+smoke is a separate explicit installed-wheel command documented in CONTRIBUTING;
+no wrapper downloads models or installs into a profile.
+
+Artifact SHA256 from the final local build (not a publication):
+
+    wheel 4a9cc49fb407b9056fefc03376a148ac2f005932223180d1085f5024bc59e60c
+    sdist e2dcdfe1472394982a8b4e8311e4c379388c2fb8af1d36212486a0b05b3b16e9
+    hear-cpu.lock 130f086b180b22a1ec7d3b20ebb883222a438020b011347c4ae05fa77c2bb403
+    see-cpu.lock d97bebfdde75fc76d8d2f6cba96a3a385998905b0b2f1c2405ded1fcde4e7d3b
+    torch-cpu.lock 769da432d1658b625dc15d30c8955dc57c942880cb7f2b75a55d610d24012287
+
+## Native acceptance still to run
+
+All rows below are native Windows NOT CHECKED: no reusable access route is given
+in the supplied machine handoff. Linux substitutes are explicitly distinguished.
+Use the companion r1 acceptance commands and discovered approved Windows paths;
+record edition/build, Python/tool versions, candidate and actual host backend.
+This as-built is the durable execution summary/evidence; no ephemeral scratch
+logs are cited as lasting evidence. W15 profile installation needs separate
+permission because the present task expressly forbids profile installation.
+
+| ID | Command/action still required on native Windows | Existing narrower evidence / limitation |
+| --- | --- | --- |
+| W01 | check Unicode/space/backslash/drive paths; reopen reports; BOM/model grammar and UNC parsing | Linux path units and real Unicode smoke pass; no SMB execution claim |
+| W02 | fresh core-only venv check, without optional engines/OCR/broker | Linux core-first/thin-host fixtures and wheel frames/signal pass |
+| W03 | doctor plus actual signal selection, old/missing tools, cwd hijack and wrapper refusal | Linux resolver/runtime units pass |
+| W04 | native child/grandchild deadline, Ctrl+C, parent death, host-job nesting, denied assignment, unrelated sentinel | Linux deadline tree cleanup passes; Win32 APIs not executed |
+| W05 | persistent stub worker twice on one PID, Unicode/stderr, EOF/partial/mismatched ID/timeout and handle cleanup | Linux transport fixtures pass; real Hear is separate |
+| W06 | two-process NTFS Store contention, kill holder, timeout/permissions and corrupt artifacts | Linux locking/storage tests pass |
+| W07 | Windows sharing violation/replacement retries, old embedding generation preserved, fix no-overwrite race/input unchanged | Linux publication/fix regressions pass |
+| W08 | native consent/decline/EOF, one-confirm setup, injected pip/download/probe/config failures, reuse | Linux setup mocks/failure-injection pass, not provisioning |
+| W09 | native hash-locked install/import, wheel smoke, fake-home portable manifest/reinstall/uninstall and junction escapes | Linux Windows-wheel resolution/hash verification, build, installed-wheel smoke and fake-home tests pass |
+| W10 | actual CPU int8 speech transcription, word timestamps, persistent worker and Store reuse offline | NOT CHECKED on any OS in this task; no model downloads |
+| W11 | actual CPU CLIP image/video index, text/image search and reopened generation offline | NOT CHECKED on any OS in this task |
+| W12 | native Tesseract CLEAR TITLE/two-frame typo and absent-Arabic SKIP | Linux real signal/OCR fixtures pass, not native OCR |
+| W13 | native CLI vs tool-worker check/fix semantic parity, registrations and UTF-8 budget/mandatory envelope failures | Linux contract suites and installed-wheel check parity pass |
+| W14 | open cached HTML in native browser; Unicode/contact-sheet assets and saved reopen | Linux persisted files/image reopen and URI units pass; native browser not seen |
+| W15 | authorized installed candidate in actual native Hermes UI; discovery/ack once per revision, reopen/session cleanup | NOT CHECKED; prohibited live profile install not performed |
+| W16 | Windows non-live suite/build/privacy and measure function spans | Linux tests/build/function spans pass; repository privacy FAIL as above; Windows CI not run |
+| W17 | only with separate GPU authorization: real broker/DLL tuple, leases, OOM retry and cleanup | NOT CHECKED; broker mocks only, no production GPU calls |
+
+Alignment at handoff: changes implement the supplied Windows design without a UI
+rewrite or altered media contracts. Native core/inference/host sign-off is not
+claimed. Next observable outcome is running the existing native harness and the
+above acceptance actions on an accessible authorized Windows machine, not a
+release, version bump or deployment.
