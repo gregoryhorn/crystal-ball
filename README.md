@@ -161,6 +161,44 @@ Arabic reference: tessdata_best 4.1.0 `ara.traineddata`, SHA256
 `ab9d157d8e38ca00e7e39c7d5363a5239e053f5b0dbdb3167dde9d8124335896`.
 Doctor reports different versions as WARN, without replacing them.
 
+## Media applicability (MA-r1)
+
+`check` classifies content before dispatch: still image, audio-only, video with
+sound, or video without audio. Cover art is not video. Animated/ambiguous media
+is Not checked rather than guessed. Corrupt supported media fails decode;
+missing engines/binaries and timeouts are incomplete evidence, not creative failure.
+
+```sh
+crystal-ball check still.png --shape 16:9 --expect-text 'HELLO WORLD' --json
+crystal-ball check music.wav --platform custom --json
+crystal-ball check render.mp4 --platform custom --shape 9:16 --json
+```
+
+Images ignore stale video-platform options and never run audio/temporal checks.
+Their OCR uses one oriented, full-resolution still, not duplicate timestamps.
+Audio runs decode, duration, silence, clipping, LUFS and true-peak measurements,
+without picture checks or an invented loudness target. No-audio video omits
+Hear, audio measurements, A/V and beat sync; an explicit audio-required brief
+is a separate required-output mismatch. Hear keeps its existing configuration;
+set `[hear] model = ""` to disable it for checks. No engine/model is downloaded.
+
+Optional `--shape 9:16|16:9|1:1` (Python/tool `shape`) compares oriented aspect
+within 1% relative error; it does not request a pixel size. With shape, the
+generic safe inset is 5% per edge unless a video platform is selected. Without
+shape, custom destinations omit aspect/safe-zone target compliance. These are
+local conventions, not platform certification; OCR is evidence, not proof of
+universal readability. Explicit video platforms retain their rules. Standalone
+video inference is retained when `platform` is omitted; callers with no selected
+destination should send `platform="custom"`.
+
+Full JSON adds `media_kind` and each SKIP's `skip_reason` (`not_applicable`,
+`not_requested`, `unavailable`, `dependency_failed`). Reports show `Not checked:`
+omissions; the 1,500-byte compact response retains identities/counts/report paths
+and omission metadata, dropping optional details as needed. Incompleteness still
+aggregates to WARN, and a real FAIL takes precedence. `quick`/`full`, existing
+arguments and exit meanings are unchanged. See
+[the as-built/evidence record](docs/as-built/media-applicability-2026-11-13.md).
+
 ## CLI examples
 
 ```sh
