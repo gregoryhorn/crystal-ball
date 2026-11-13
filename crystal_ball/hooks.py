@@ -4,6 +4,7 @@ import shlex
 import itertools
 import threading
 import concurrent.futures as futures
+from .platforms.paths import identity
 from .core import quality_check
 from .frames import probe
 from .config import load
@@ -15,6 +16,7 @@ def candidate_paths(args, result="", cwd=None):
     """Cheap extraction only. Stat, project scans and probing are background work."""
     cwd = Path(cwd or HOME)
     texts = []
+    structured = []
     budget=[32768,128]
     def collect(obj,depth=0):
         if depth>5 or budget[0]<=0 or budget[1]<=0:
@@ -25,7 +27,11 @@ def candidate_paths(args, result="", cwd=None):
             budget[0]-=len(value)
             texts.append(value)
         elif isinstance(obj,dict):
-            for value in itertools.islice(obj.values(),64):
+            for key,value in itertools.islice(obj.items(),64):
+                if budget[0]<=0 or budget[1]<=0:
+                    break
+                if key in {'file','output','output_file','path'} and isinstance(value,str) and len(value)<=32768:
+                    structured.append(value)
                 collect(value,depth+1)
         elif isinstance(obj,list):
             for value in obj[:64]:
@@ -33,9 +39,15 @@ def candidate_paths(args, result="", cwd=None):
     collect(args)
     collect(result)
     found = set()
+    for value in structured[:64]:
+        if Path(value).suffix.lower() in VIDEO:
+            p=Path(value)
+            found.add(os.path.abspath(str(cwd/p) if not p.is_absolute() else str(p)))
     for text in texts[:64]:
+        if text in structured:
+            continue
         try:
-            tokens = shlex.split(text)
+            tokens = [m.group(1) or m.group(2) or m.group(3) for m in re.finditer(r'"([^"]*)"|\x27([^\x27]*)\x27|(\S+)',text)] if os.name=='nt' else shlex.split(text)
         except ValueError:
             tokens = text.split()
         for i, token in enumerate(tokens):
@@ -92,7 +104,8 @@ class Hooks:
     def queue(self, sid, path):
         """Called off the hook hot path (also convenient for focused tests)."""
         try:
-            path = str(Path(path).resolve())
+            display=str(Path(path).resolve())
+            path = identity(str(Path(path).resolve()))
             sig = self.signature(path)
             if re.search(r"proxy|draft", path, re.I) and probe(path)["duration"] < 1:
                 return
@@ -105,7 +118,7 @@ class Hooks:
                     return
                 if len(state["files"]) >= 128 and not previous:
                     return
-                state["files"][path] = {"sig": sig, "result": None, "injected": False, "ack": False, "nudged": False}
+                state["files"][path] = {"path":display,"sig": sig, "result": None, "injected": False, "ack": False, "nudged": False}
                 self.pending[(sid, path)] = time.monotonic() + self.debounce
                 self.start()
                 self.lock.notify_all()
@@ -151,7 +164,7 @@ class Hooks:
             sig = snapshot and snapshot["sig"]
         if not sig:
             return
-        result = self.check(file=path, mode="quick")
+        result = self.check(file=snapshot.get('path',path), mode="quick")
         with self.lock:
             state = self.sessions.get(sid)
             current = state and state["files"].get(path)
@@ -210,14 +223,15 @@ class Hooks:
         if not sid:
             return
         try:
-            path = str(Path(path).resolve())
+            display=str(Path(path).resolve())
+            path = identity(str(Path(path).resolve()))
             sig = self.signature(path)
             with self.lock:
                 state = self.state(sid)
                 if state is None:
                     return
                 previous = state["files"].get(path, {})
-                state["files"][path] = {"sig": sig, "result": result, "injected": True, "ack": True,
+                state["files"][path] = {"path":display,"sig": sig, "result": result, "injected": True, "ack": True,
                                         "nudged": previous.get("nudged", False) if previous.get("sig") == sig else False}
         except Exception:
             pass
@@ -234,7 +248,7 @@ class Hooks:
                     if result is None or file["injected"]:
                         continue
                     issue = next(iter(result.get("items", [])), {})
-                    line = f"QC {Path(path).name}: {result['verdict']}"
+                    line = f"QC {Path(file.get('path',path)).name}: {result['verdict']}"
                     if issue:
                         line += f" {issue['id']} {issue['summary'][:90]} (fix: {issue.get('fix', '')[:100]})"
                     line += f"; {result.get('counts', {}).get('WARN', 0)} WARN; report: {result.get('report', '')}"
@@ -259,7 +273,7 @@ class Hooks:
                 if state['reminders']>=3:
                     break
                 if path not in state['reminded'] and (result is None or result.get('verdict')=='FAIL' and not file['ack']):
-                    lines.append(f'Run crystal_ball check on {path} before reporting it done; check passed ≠ approved.')
+                    lines.append(f"Run crystal_ball check on {file.get('path',path)} before reporting it done; check passed ≠ approved.")
                     state['reminded'].add(path)
                     state['reminders']+=1
                     file['nudged']=True

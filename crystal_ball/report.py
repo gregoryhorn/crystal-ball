@@ -3,8 +3,23 @@ import html
 import json
 import os
 from urllib.parse import quote
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import ntpath
 from .cache import atomic
+
+def asset_url(path, report_dir):
+    native=PureWindowsPath(path)
+    if native.is_absolute() and native.drive:
+        if native.drive.startswith('\\\\'):
+            return native.as_uri()
+        try:
+            return quote(PureWindowsPath(ntpath.relpath(str(native),str(report_dir))).as_posix())
+        except ValueError:
+            return native.as_uri()
+    try:
+        return quote(Path(os.path.relpath(path, report_dir)).as_posix())
+    except ValueError:
+        return Path(path).absolute().as_uri()
 
 def write_report(doc, run_dir):
     target=Path(run_dir)/'report.md'
@@ -20,7 +35,7 @@ def write_report(doc, run_dir):
     contact=review.get('contact_sheet')
     preview=''
     if contact and Path(contact).is_file():
-        relative=quote(os.path.relpath(contact,target.parent))
+        relative=asset_url(contact,target.parent)
         lines += ['', '## Sampled contact sheet', '', f'![Timestamped sampled frames]({relative})']
         preview='<h2>Sampled contact sheet</h2><img style="max-width:100%;height:auto" alt="Timestamped sampled frames" src="'+html.escape(relative,quote=True)+'">'
     text='\n'.join(lines)

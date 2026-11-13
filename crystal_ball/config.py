@@ -6,12 +6,13 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from .platforms.paths import cache_home, config_candidates, resolve_config_path, resolve_model, windows
 
 DEFAULTS = {
-    'cache_dir': '~/.cache/crystal-ball', 'projects_root': None,
-    'hear': {'python': sys.executable, 'model': 'large-v3-turbo', 'device': 'cuda', 'min_free_vram_gb': 3.5, 'cpu_threads': 4, 'demucs_command': []},
+    'cache_dir': cache_home(), 'projects_root': None,
+    'hear': {'python': sys.executable, 'model': 'large-v3-turbo', 'device': 'cpu' if windows() else 'cuda', 'min_free_vram_gb': 3.5, 'cpu_threads': 4, 'demucs_command': []},
     'whispercpp': {'bin': '', 'model': ''},
-    'see': {'python': sys.executable, 'model': 'openai/clip-vit-large-patch14', 'min_free_vram_gb': 2.5, 'cpu_threads': 4},
+    'see': {'python': sys.executable, 'model': 'openai/clip-vit-large-patch14', 'device': 'cpu' if windows() else 'cuda', 'min_free_vram_gb': 2.5, 'cpu_threads': 4},
     'rhythm': {'python': sys.executable},
     'scenes': {'python': sys.executable, 'detector': 'content', 'threshold': 27.0, 'min_shot_s': 0.3},
     'read': {'tessdata': ''},
@@ -22,12 +23,12 @@ DEFAULTS = {
 def load(path=None):
     cfg = copy.deepcopy(DEFAULTS)
     explicit = path or os.environ.get('CRYSTAL_BALL_CONFIG')
-    candidates = [Path(explicit).expanduser()] if explicit else [Path.cwd()/'crystal-ball.toml', Path('~/.config/crystal-ball/config.toml').expanduser()]
+    candidates = [Path(resolve_config_path(explicit, Path.cwd()))] if explicit else config_candidates()
     chosen = next((p for p in candidates if p.is_file()), None)
     if explicit and chosen is None:
         raise FileNotFoundError('explicit Crystal Ball config does not exist')
     if chosen:
-        doc = tomllib.loads(chosen.read_text())
+        doc = tomllib.loads(chosen.read_text(encoding='utf-8-sig'))
         for key, value in doc.items():
             if key not in cfg:
                 raise ValueError(f'unknown configuration key: {key}')
@@ -55,21 +56,15 @@ def load(path=None):
     for section, key in [(None,'cache_dir'),(None,'projects_root'),('hear','python'),('see','python'),('rhythm','python'),('scenes','python'),('read','tessdata'),('whispercpp','model'),('whispercpp','bin')]:
         value = cfg[section][key] if section else cfg[key]
         if value:
-            p = Path(os.path.expandvars(str(value))).expanduser()
-            # Bare interpreter names are PATH commands, all other paths relative to config.
-            if key in {'python','bin'} and len(p.parts) == 1 and not str(value).startswith('.'):
-                new = str(p)
-            else:
-                new = str(p if p.is_absolute() else base/p)
+            new = resolve_config_path(value, base, executable=key in {'python','bin'})
             if section:
                 cfg[section][key] = new
             else:
                 cfg[key] = new
     for section in ('hear','see'):
-        model = str(cfg[section]['model'])
-        if model.startswith(('.', '~', '/')):
-            p = Path(model).expanduser()
-            cfg[section]['model'] = str(p if p.is_absolute() else base/p)
+        cfg[section]['model'] = resolve_model(cfg[section]['model'], base)
+        if cfg[section]['device'] not in {'cpu','cuda'}:
+            raise ValueError(f'{section}.device must be cpu or cuda')
     if cfg['judge']['backend'] not in {'off','hermes-auxiliary','openai-compatible'}:
         raise ValueError('invalid judge backend')
     for section, key in [('rules','files'),('fix','protected'),('hear','demucs_command')]:
@@ -95,7 +90,7 @@ def rules_for(path=None, config=None):
     for pattern in cfg['rules']['files']:
         p = Path(pattern).expanduser()
         files.update(Path(f) for f in glob.glob(str(p if p.is_absolute() else Path(cfg['_base'])/p), recursive=True) if Path(f).is_file() and Path(f).suffix.lower()=='.md')
-    active = '\n'.join(p.read_text(errors='replace') for p in sorted(files))
+    active = '\n'.join(p.read_text(encoding='utf-8', errors='replace') for p in sorted(files))
     terms = re.findall(r'["“`«]([^"”`»\n]{2,80})["”`»]', active)
     terms += re.findall(r'\b[A-Z][a-z]+(?:[ -][A-Z][a-z]+){0,3}\b|\b[A-Z]{2,20}\b', active)
     return {'active': active, 'terms': sorted(set(terms)), 'deps': {str(p):fingerprint(p) for p in sorted(files)}}
