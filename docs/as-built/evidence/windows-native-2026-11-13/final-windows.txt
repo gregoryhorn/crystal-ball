@@ -1,0 +1,22 @@
+** WARNING: connection is not using a post-quantum key exchange algorithm.
+** This session may be vulnerable to "store now, decrypt later" attacks.
+** The server may need to be upgraded. See https://openssh.com/pq.html
+aea2ceb5e9a2e74fb3e252302673220561edbcae
+Command: %USERPROFILE%\AppData\Local\Temp\cbv\venv\Scripts\python.exe -m pytest -m 'not live' -q -p no:cacheprovider --basetemp %USERPROFILE%\AppData\Local\Temp\cbv\scratch\crystal-ball-7806c8c4b44440b294075d0d3f9be126/pytest
+........................................................................ [ 23%]
+...........................................s......................s..... [ 47%]
+..............................................s....................................................................................... [ 92%]
+.......................                                                  [100%]
+298 passed, 3 skipped, 8 deselected, 10 subtests passed in 109.16s (0:01:49)
+Privacy scan: PASS (134 publishable files, 0 findings)
+crystal_ball_media-1.1.1-py3-none-any.whl: PASS (90 privacy-scanned members)
+crystal_ball_media-1.1.1.tar.gz: PASS (134 privacy-scanned members)
+EXIT=0powershell.exe : warning: build_py: byte-compiling is disabled, skipping.
+At %USERPROFILE%\run-remote-verify.ps1:6 char:1
++ & powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: build_...bled, skipping.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: install_lib: byte-compiling is disabled, skipping.
+

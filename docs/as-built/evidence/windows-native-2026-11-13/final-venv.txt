@@ -1,0 +1,13 @@
+........................................................................ [ 23%]
+.................ssssssss............................................... [ 46%]
+...................................................................................................................................... [ 89%]
+...............................                                          [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_live.py:15: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:37: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:56: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:65: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:75: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [2] tests/test_live.py:91: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:108: set CRYSTAL_BALL_LIVE=1 and configure local models
+301 passed, 8 skipped, 10 subtests passed in 49.37s

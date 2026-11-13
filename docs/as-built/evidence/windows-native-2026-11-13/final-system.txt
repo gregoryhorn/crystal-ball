@@ -1,0 +1,23 @@
+........................................................................ [ 23%]
+.................ssssssss............................................... [ 46%]
+...................................................................................................................................... [ 89%]
+...............................                                          [100%]
+=============================== warnings summary ===============================
+tests/platforms/test_paths.py::test_windows_asset_url_grammar
+  ~/Projects/crystal-ball/crystal_ball/report.py:18: DeprecationWarning: pathlib.PurePath.as_uri() is deprecated and scheduled for removal in Python 3.19. Use pathlib.Path.as_uri().
+    return native.as_uri()
+
+tests/platforms/test_paths.py::test_windows_asset_url_grammar
+  ~/Projects/crystal-ball/crystal_ball/report.py:14: DeprecationWarning: pathlib.PurePath.as_uri() is deprecated and scheduled for removal in Python 3.19. Use pathlib.Path.as_uri().
+    return native.as_uri()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_live.py:15: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:37: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:56: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:65: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:75: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [2] tests/test_live.py:91: set CRYSTAL_BALL_LIVE=1 and configure local models
+SKIPPED [1] tests/test_live.py:108: set CRYSTAL_BALL_LIVE=1 and configure local models
+301 passed, 8 skipped, 2 warnings, 10 subtests passed in 52.35s
