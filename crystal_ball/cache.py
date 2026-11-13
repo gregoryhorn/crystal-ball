@@ -87,6 +87,8 @@ def runtime_stamp(config):
             for p in prefix.glob('lib/python*/site-packages/*.dist-info/METADATA'):
                 if p.parent.name.startswith(('faster_whisper-','ctranslate2-','transformers-','torch-')):
                     paths.add(p)
+        if not config[section]['model']:
+            continue
         model=Path(config[section]['model']).expanduser()
         if model.is_file():
             paths.add(model)
@@ -121,6 +123,8 @@ def runtime_stamp(config):
     hub=Path(os.environ.get('HF_HUB_CACHE',os.environ.get('HUGGINGFACE_HUB_CACHE',str(Path(os.environ.get('HF_HOME','~/.cache/huggingface')).expanduser()/'hub')))).expanduser()
     for section in ('hear','see'):
         model=config[section]['model']
+        if not model:
+            continue
         if '/' in model and not Path(model).is_absolute():
             roots=[hub/('models--'+model.replace('/','--'))]
         elif not Path(model).is_absolute():

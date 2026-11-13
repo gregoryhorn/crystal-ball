@@ -17,7 +17,12 @@ def ffmpeg(*args):
 
 @pytest.fixture
 def media(tmp_path, monkeypatch):
-    monkeypatch.setenv('CRYSTAL_BALL_HEAR_MODEL', '')
+    import os
+    # An empty inherited environment value is dropped by native Windows process
+    # startup. Put this intentional model disablement in the shared config.
+    config=Path(os.environ['CRYSTAL_BALL_CONFIG'])
+    with config.open('a',encoding='utf-8') as stream:
+        stream.write('model = ""\n')
     image = tmp_path/'still.png'
     still = Image.new('RGB', (320, 180), '#345678')
     ImageDraw.Draw(still).text((20,60), 'HELLO WORLD', fill='white')

@@ -40,12 +40,12 @@ def doctor(config=None):
             executable=resolve_tool(binary)
             args=[executable,'--version' if binary=='tesseract' else '-version']
             version=command(args,10).splitlines()[0]
-            match=re.search(r'version (\d+)\.(\d+)',version) if binary in {'ffmpeg','ffprobe'} else None
+            match=re.search(r'version n?(\d+)\.(\d+)',version) if binary in {'ffmpeg','ffprobe'} else None
             old=binary in {'ffmpeg','ffprobe'} and (not match or tuple(map(int,match.groups()))<(6,1))
             add(binary,'FAIL' if old else 'PASS',version+(' (requires 6.1+)' if old else ''),path=executable)
         except Exception as exc:
             failed(binary,'WARN' if binary=='tesseract' else 'FAIL',exc)
-    versions={r['engine']:re.search(r'version (\d+\.\d+(?:\.\d+)?)',r['detail']) for r in rows if r['engine'] in {'ffmpeg','ffprobe'}}
+    versions={r['engine']:re.search(r'version n?(\d+\.\d+(?:\.\d+)?)',r['detail']) for r in rows if r['engine'] in {'ffmpeg','ffprobe'}}
     if all(versions.get(k) for k in ('ffmpeg','ffprobe')) and versions['ffmpeg'][1]!=versions['ffprobe'][1]:
         add('ffmpeg/ffprobe','WARN','selected tools have mismatched releases')
     for kind in ('hear','see'):

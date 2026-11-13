@@ -120,8 +120,12 @@ def test_stage_failure_isolation(clips, tmp_path, monkeypatch):
         return actual(cmd, timeout, env)
     monkeypatch.setattr(q, "process_json", broken)
     result = q.quality_check(str(clips["good"]))
-    assert any("synthetic signal failure" in value for value in result["not_checked"])
-    doc = json.loads(Path(result["report"]).with_name("full.json").read_text())
+    # Long native paths may legitimately omit this detail from the compact
+    # envelope; the persisted report must retain the exact failure evidence.
+    doc=json.loads(Path(result['report']).with_name('full.json').read_text(encoding='utf-8'))
+    assert any("synthetic signal failure" in value['summary'] for value in doc['checks'])
+    assert (any("synthetic signal failure" in value for value in result['not_checked'])
+            or result['not_checked_omitted_count'] > 0)
     # MA-r1: without a completed decode, dependent engines must not run.
     assert 'review' not in doc['stages'] and 'ocr' not in doc['stages']
     assert any(r.get('skip_reason')=='dependency_failed' for r in doc['checks'])
