@@ -31,7 +31,8 @@ def atomic(path, data):
     try:
         with os.fdopen(fd,'w',encoding='utf-8') as f:
             f.write(data); f.flush(); os.fsync(f.fileno())
-        os.replace(tmp,p)
+        from .platforms.locks import replace
+        replace(tmp,p)
     finally:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
@@ -52,7 +53,7 @@ class Store:
         with lock, file_lock(target.parent):
             if target.exists():
                 try:
-                    value=json.loads(target.read_text())
+                    value=json.loads(target.read_text(encoding='utf-8'))
                     paths=value.get('artifact_paths',[]) if isinstance(value,dict) else []
                     if all(Path(p).exists() for p in paths):
                         return value
@@ -68,23 +69,16 @@ class Store:
             return value
 
 
-@contextlib.contextmanager
-def file_lock(directory):
-    """Serialize artifact creation across independent CLI/engine processes (POSIX)."""
-    import fcntl
-    Path(directory).mkdir(parents=True,exist_ok=True)
-    with (Path(directory)/'.lock').open('a') as handle:
-        fcntl.flock(handle,fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle,fcntl.LOCK_UN)
+from .platforms.locks import file_lock
 
 
 def runtime_stamp(config):
     """Invalidate cached skips/results when configured binaries or local models change."""
     import shutil
+    from .platforms.runtime import metadata_paths
     paths=set()
+    for python in {config[s]['python'] for s in ('hear','see','rhythm','scenes')}:
+        paths.update(metadata_paths(python))
     for section in ('hear','see'):
         exe=shutil.which(config[section]['python'])
         if exe:

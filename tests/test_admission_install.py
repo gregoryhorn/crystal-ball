@@ -23,7 +23,7 @@ def test_gpu_admission(monkeypatch):
 @pytest.mark.parametrize('oom_at',[None,'load','runtime'])
 def test_hear_cpu_before_cpp_and_oom_retry(monkeypatch,oom_at):
     devices=[]; audio=np.zeros(16000,dtype='<f4').tobytes()
-    monkeypatch.setattr('crystal_ball.senses.hear_worker.subprocess.run',lambda *a,**kw:SimpleNamespace(stdout=audio))
+    monkeypatch.setattr('crystal_ball.senses.hear_worker.run_owned',lambda *a,**kw:SimpleNamespace(stdout=audio))
     class Lease:
         def complete_gpu_work(self,cleanup): cleanup()
         def release(self): pass

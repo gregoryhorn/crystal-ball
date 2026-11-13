@@ -5,6 +5,7 @@ from pathlib import Path
 from .cache import atomic, dumps
 from .config import load
 from .util import process_json, engine_python_env, StageError
+from .platforms.process import spawn_owned
 
 def dispatch(action='check',**params):
     cfg=load()
@@ -50,14 +51,14 @@ def dispatch(action='check',**params):
             raise ValueError('paths are required for index')
         req={'action':action,**params}
         env=engine_python_env(cfg['see']['python'],{'HF_HUB_OFFLINE':'1'})
-        proc=subprocess.Popen([cfg['see']['python'],'-m','crystal_ball.senses.see_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,start_new_session=True)
+        proc=spawn_owned([cfg['see']['python'],'-m','crystal_ball.senses.see_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env)
         import contextlib, signal, json
         try:
             out,err=proc.communicate(dumps(req),timeout=1800)
         except BaseException:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(proc.pid,signal.SIGKILL)
-            proc.communicate(); raise
+            raise
+        finally:
+            proc.close()
         if proc.returncode:
             raise StageError('see', err or out)
         return json.loads(out)

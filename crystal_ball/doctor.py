@@ -11,6 +11,8 @@ from pathlib import Path
 from .config import load
 from .senses.hear import Worker
 from .util import command, process_json, engine_python_env, error_result
+from .platforms.executables import resolve_tool
+from .platforms.runtime import core_media_python
 
 ARABIC_SHA256='ab9d157d8e38ca00e7e39c7d5363a5239e053f5b0dbdb3167dde9d8124335896'
 
@@ -23,34 +25,38 @@ def doctor(config=None):
         logs.append(failure['log'])
         add(name,status,(failure['error']+suffix)[:240])
     modules={}
-    for name in ('numpy','PIL','torch','transformers'):
+    for name in ('numpy','PIL'):
         try:
             importlib.import_module(name)
             modules[name]='available'
         except Exception as exc:
             modules[name]=f'{type(exc).__name__}: {exc}'[:160]
     add('host','PASS' if all(v=='available' for v in modules.values()) else 'WARN',
-        'host runs signal, audio orchestration and vision/judge; see runs review/contact sheet, OCR/read_text, pacing/flash/fades and voice balance; hear/rhythm/scenes use their configured engines',
+        'core runs signal, review/contact sheet, OCR/read_text, pacing/flash/fades and voice balance when numpy/PIL are available; configured see runtime is the thin-host fallback; CLIP stays in see',
         modules=modules,python=sys.executable,see_python=cfg['see']['python'])
     for binary in ('ffmpeg','ffprobe','tesseract'):
         try:
-            args=[binary,'--version' if binary=='tesseract' else '-version']
+            executable=resolve_tool(binary)
+            args=[executable,'--version' if binary=='tesseract' else '-version']
             version=command(args,10).splitlines()[0]
             match=re.search(r'version (\d+)\.(\d+)',version) if binary in {'ffmpeg','ffprobe'} else None
-            old=bool(match and tuple(map(int,match.groups()))<(6,1))
-            add(binary,'FAIL' if old else 'PASS',version+(' (requires 6.1+)' if old else ''))
+            old=binary in {'ffmpeg','ffprobe'} and (not match or tuple(map(int,match.groups()))<(6,1))
+            add(binary,'FAIL' if old else 'PASS',version+(' (requires 6.1+)' if old else ''),path=executable)
         except Exception as exc:
-            failed(binary,'FAIL',exc)
+            failed(binary,'WARN' if binary=='tesseract' else 'FAIL',exc)
+    versions={r['engine']:re.search(r'version (\d+\.\d+(?:\.\d+)?)',r['detail']) for r in rows if r['engine'] in {'ffmpeg','ffprobe'}}
+    if all(versions.get(k) for k in ('ffmpeg','ffprobe')) and versions['ffmpeg'][1]!=versions['ffprobe'][1]:
+        add('ffmpeg/ffprobe','WARN','selected tools have mismatched releases')
     for kind in ('hear','see'):
         try:
             env=engine_python_env(cfg[kind]['python'],{'HF_HUB_OFFLINE':'1'})
-            if kind=='hear':
+            if kind=='hear' and os.name!='nt':
                 prefix=command([cfg[kind]['python'],'-c','import sys; print(sys.prefix)'],15,env).strip()
                 libs=[str(p) for name in ('cublas','cudnn') for p in Path(prefix).glob(f'lib/python*/site-packages/nvidia/{name}/lib')]
                 env['LD_LIBRARY_PATH']=os.pathsep.join(libs+[os.environ.get('LD_LIBRARY_PATH','')])
             detail=process_json([cfg[kind]['python'],'-m','crystal_ball.doctor_worker',kind,cfg[kind]['model']],180,env)
             gpu=detail['gpu_count']
-            add(kind,'WARN' if kind=='hear' and cfg[kind]['device']=='cuda' and not gpu else 'PASS',f'local model verified; {gpu} GPU(s); CPU available; inference not run',**detail)
+            add(kind,'WARN' if cfg[kind]['device']=='cuda' and not gpu else 'PASS',f"local model verified; configured {cfg[kind]['device']}; {gpu} GPU(s); CPU available; inference not run",**detail)
         except Exception as exc:
             failed(kind,'WARN',exc)
     for kind,package in [('rhythm','librosa'),('scenes','scenedetect')]:

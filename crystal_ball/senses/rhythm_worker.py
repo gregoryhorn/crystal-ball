@@ -3,6 +3,7 @@ import contextlib
 import json
 import subprocess
 import sys
+from ..platforms.process import run_owned
 
 
 def analyse(req):
@@ -11,7 +12,7 @@ def analyse(req):
     from scipy.ndimage import gaussian_filter1d
     from scipy.signal import find_peaks
     sr=22050; hop=220
-    raw=subprocess.run(['ffmpeg','-nostdin','-v','error','-i',req['file'],'-vn','-ac','1','-ar',str(sr),'-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180).stdout
+    raw=run_owned(['ffmpeg','-nostdin','-v','error','-i',req['file'],'-vn','-ac','1','-ar',str(sr),'-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180).stdout
     y=np.frombuffer(raw,dtype='<f4').copy(); duration=len(y)/sr
     if not len(y):
         raise ValueError('no audio samples')

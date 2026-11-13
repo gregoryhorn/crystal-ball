@@ -93,7 +93,7 @@ def test_clip_command_owns_load_inference_and_cleanup(monkeypatch,broker,fail):
 
 
 def test_hear_reacquires_and_drops_only_owned_cuda(monkeypatch,broker):
-    monkeypatch.setattr(hear_worker.subprocess,'run',lambda *a,**kw:SimpleNamespace(stdout=np.zeros(16,dtype='<f4').tobytes()))
+    monkeypatch.setattr(hear_worker,'run_owned',lambda *a,**kw:SimpleNamespace(stdout=np.zeros(16,dtype='<f4').tobytes()))
     class Model:
         def __init__(self,*a,**kw):
             broker.append('load-'+kw['device'])
@@ -127,7 +127,7 @@ def test_broker_completion_rejection_retains_occupancy(monkeypatch):
 
 @pytest.mark.parametrize('oom',[False,True])
 def test_hear_cleanup_failure_retains_lease_and_cpu_retry(monkeypatch,broker,oom):
-    monkeypatch.setattr(hear_worker.subprocess,'run',lambda *a,**kw:SimpleNamespace(stdout=b''))
+    monkeypatch.setattr(hear_worker,'run_owned',lambda *a,**kw:SimpleNamespace(stdout=b''))
     class Model:
         def __init__(self,*a,**kw):
             self.device=kw['device']

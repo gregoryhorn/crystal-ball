@@ -9,13 +9,14 @@ from ..cache import Store, atomic, dumps, runtime_stamp
 from ..config import load
 from ..frames import probe
 from ..util import command
+from ..platforms.process import run_owned
 
 
 def ffmpeg_cuts(file, threshold, detector='content'):
     # Heuristic content-score mapping; adaptive ratios have no direct mapping.
     score=.3 if detector=='adaptive' else min(.99,max(.001,float(threshold)/100))
     import subprocess
-    result=subprocess.run(['ffmpeg','-nostdin','-v','info','-threads','1','-i',str(file),'-map','0:V:0','-an','-vf',f"select='gt(scene,{score})',showinfo",'-fps_mode','vfr','-f','null','-'],capture_output=True,text=True,check=True,timeout=180)
+    result=run_owned(['ffmpeg','-nostdin','-v','info','-threads','1','-i',str(file),'-map','0:V:0','-an','-vf',f"select='gt(scene,{score})',showinfo",'-fps_mode','vfr','-f','null','-'],capture_output=True,text=True,check=True,timeout=180)
     return [float(t) for t in re.findall(r'pts_time:([\d.eE+\-]+)',result.stderr)]
 
 

@@ -67,7 +67,10 @@ else:
             assert all(key not in env for key in REMOVED)
             assert str(poison) not in env['PYTHONPATH']
             seen.append(module)
-            cmd = [cmd[0], '-u', '-c', code, module.rsplit('.', 1)[-1], *cmd[cmd.index('-m') + 2:]]
+            # Retain the native containment launcher; substitute inference only.
+            prefix=cmd[:4] if len(cmd)>4 and str(cmd[1]).endswith('launcher.py') else []
+            exe=cmd[4] if prefix else cmd[0]
+            cmd = [*prefix, exe, '-u', '-c', code, module.rsplit('.', 1)[-1], *cmd[cmd.index('-m') + 2:]]
         return original(cmd, *args, **kw)
     monkeypatch.setattr(subprocess, 'Popen', launch)
     return seen
@@ -96,7 +99,8 @@ def test_see_api_and_doctor_poisoned(monkeypatch, stub_engine_launches):
     result = doctor(cfg)
     rows = {row['engine']: row for row in result['checks']}
     assert rows['hear']['detail'].startswith('local model verified')
-    assert rows['see']['status'] == rows['rhythm']['status'] == rows['scenes']['status'] == 'PASS'
+    assert rows['see']['status'] == ('WARN' if cfg['see']['device']=='cuda' else 'PASS')
+    assert rows['rhythm']['status'] == rows['scenes']['status'] == 'PASS'
     assert 'crystal_ball.doctor_worker' in stub_engine_launches
 
 

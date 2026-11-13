@@ -3,6 +3,7 @@ from pathlib import Path
 from .cache import dumps, atomic, fingerprint
 import traceback
 import unicodedata
+from .platforms.process import spawn_owned, run_owned
 
 def _python_env(extra=None):
     """Remove inherited interpreter selectors without changing this process."""
@@ -81,22 +82,22 @@ def has_audio_stream(file, meta=None):
 
 def command(cmd, timeout=60, env=None):
     """Kill the whole stage's descendants at the outer deadline as well."""
-    proc = subprocess.run([str(x) for x in cmd], capture_output=True, text=True,
+    proc = run_owned([str(x) for x in cmd], capture_output=True, text=True,
                           timeout=timeout, env=env)
     if proc.returncode:
         raise StageError(Path(str(cmd[0])).name, proc.stderr or proc.stdout or f"exit {proc.returncode}")
     return proc.stdout
 
 def process_json(cmd, timeout, env=None):
-    proc = subprocess.Popen([str(x) for x in cmd], stdout=subprocess.PIPE,
+    proc = spawn_owned([str(x) for x in cmd], stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, start_new_session=True, env=env)
     try:
         out, err = proc.communicate(timeout=timeout)
     except BaseException:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.communicate()
+        proc.close()
         raise
+    finally:
+        proc.close()
     if proc.returncode:
         try:
             failure=json.loads(out)

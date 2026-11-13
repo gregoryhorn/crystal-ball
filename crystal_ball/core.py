@@ -11,6 +11,7 @@ from .senses.read import ocr_stage, confirm_safe_zones
 from .senses.judge import vision_stage, crosscheck_vision
 from .senses.hear import audio_stage
 from .fix import apply_fix
+from .platforms.runtime import core_media_python
 VERSION = "1.1.1"
 MAX_BYTES = 1500
 TIMEOUTS = {"signal":180,"review":120,"ocr":120,"audio":300,"vision":100,"editing":600}
@@ -31,7 +32,7 @@ def run_stage(stage, request, timeout=None):
         request_path=Path(request["run_dir"])/f"{stage}-request.json"
         atomic(request_path,dumps(request))
         cfg=request.get('config') or load()
-        python=cfg['see']['python'] if stage in {'review','ocr','editing'} else sys.executable
+        python=core_media_python(cfg) if stage in {'review','ocr','editing'} else sys.executable
         env=engine_python_env(python,{"OMP_THREAD_LIMIT":"1","OPENBLAS_NUM_THREADS":"1","HF_HUB_OFFLINE":"1","CRYSTAL_BALL_STAGE":"1"})
         value=process_json([python,"-m","crystal_ball.stage_worker",stage,request_path],timeout or TIMEOUTS[stage],env)
         if not isinstance(value,dict) or "error" in value:
@@ -179,7 +180,7 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
     cached_path = entry / "result.json"
     if not force and cached_path.exists():
         try:
-            doc = json.loads(cached_path.read_text())
+            doc = json.loads(cached_path.read_text(encoding='utf-8'))
             if Path(doc["report"]).is_file():
                 return compact(doc, True), doc
         except (OSError, ValueError, KeyError):

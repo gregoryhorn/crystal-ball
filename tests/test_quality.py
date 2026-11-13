@@ -33,7 +33,7 @@ def clips(tmp_path_factory):
         path = root / f"{name}.mp4"
         args = ["-f", "lavfi", "-i", video, "-f", "lavfi", "-i", audio]
         if name == "text":
-            args += ["-vf", "drawtext=font=DejaVuSans-Bold:text='NEW PLACE':fontsize=64:fontcolor=white:x=100:y=1190"]
+            args += ["-vf", "drawtext=font="+('Arial' if os.name=='nt' else 'DejaVuSans-Bold')+":text='NEW PLACE':fontsize=64:fontcolor=white:x=100:y=1190"]
         if name != "clipping":
             args += ["-af", "loudnorm=I=-14:TP=-1:LRA=11", "-ar", "48000"]
         ffmpeg(*args, "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path)
@@ -126,15 +126,13 @@ def test_stage_failure_isolation(clips, tmp_path, monkeypatch):
     assert doc["stages"]["ocr"].get("lines") is not None
 
 
-def test_worker_timeout_kills_descendants(tmp_path):
+def test_worker_timeout_kills_descendants(tmp_path,assert_stopped):
     pidfile = tmp_path / "pid"
-    code = "import subprocess,time,pathlib; p=subprocess.Popen(['sleep','30']); pathlib.Path(" + repr(str(pidfile)) + ").write_text(str(p.pid)); time.sleep(30)"
+    code = "import subprocess,sys,time,pathlib; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path(" + repr(str(pidfile)) + ").write_text(str(p.pid)); time.sleep(30)"
     with pytest.raises(subprocess.TimeoutExpired):
-        q.process_json([sys.executable, "-E", "-c", code], .3)
+        q.process_json([sys.executable, "-E", "-c", code], 1.5)
     pid = int(pidfile.read_text())
-    # A reaped process or a zombie has stopped executing.
-    stat = Path(f"/proc/{pid}/stat")
-    assert not stat.exists() or stat.read_text().split()[2] == "Z"
+    assert_stopped(pid)
 
 
 def test_audio_contract_stub(clips, tmp_path, monkeypatch):

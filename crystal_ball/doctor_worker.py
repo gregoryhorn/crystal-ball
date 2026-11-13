@@ -18,6 +18,8 @@ def checksums(path):
     return values
 
 def main():
+    from .platforms.windows.dlls import initialize
+    initialize()
     if len(sys.argv)==1:
         req=json.load(sys.stdin); kind=req['kind']
         package={'rhythm':'librosa','scenes':'scenedetect'}[kind]

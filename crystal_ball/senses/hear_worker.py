@@ -4,6 +4,9 @@ import importlib
 import json
 import subprocess
 import sys
+from ..platforms.process import run_owned
+from ..platforms.windows.dlls import initialize
+initialize()
 from ..util import error_result
 
 class Engine:
@@ -12,7 +15,7 @@ class Engine:
     def transcribe(self, req):
         import numpy as np
         # PyAV is deliberately bypassed: float32 PCM, mono, 16 kHz.
-        raw=subprocess.run(['ffmpeg','-nostdin','-v','error','-i',req['file'],'-vn','-ac','1','-ar','16000','-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180).stdout
+        raw=run_owned(['ffmpeg','-nostdin','-v','error','-i',req['file'],'-vn','-ac','1','-ar','16000','-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180).stdout
         samples=np.frombuffer(raw,dtype='<f4').astype(np.float32,copy=False)
         from crystal_ball.gpu import Session, is_oom
         session=Session(req.get('min_free_vram_gb',3.5), purpose='Whisper transcription',

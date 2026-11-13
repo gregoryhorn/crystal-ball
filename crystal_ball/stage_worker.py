@@ -27,7 +27,7 @@ def main():
             print(dumps(value))
             return 0
         stage, request = sys.argv[1:]
-        req=json.loads(Path(request).read_text())
+        req=json.loads(Path(request).read_text(encoding='utf-8'))
         from .editing import edit_stage
         fn={"signal":core.signal_stage,"review":core.review_stage,"ocr":core.ocr_stage,"vision":core.vision_stage,"audio":core.audio_stage,"editing":edit_stage}[stage]
         print(dumps(fn(req)))

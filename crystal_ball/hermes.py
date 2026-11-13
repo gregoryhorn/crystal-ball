@@ -10,6 +10,7 @@ from .cache import dumps
 from .config import load
 from .hooks import Hooks
 from .util import error_result, StageError, same_python_env
+from .platforms.process import spawn_owned
 
 ACTIONS=['check','transcribe','find','index','read_text','fix','doctor','beats','scenes','cuts']
 
@@ -30,13 +31,13 @@ def invoke(action,**params):
     config=profile_config()
     if config:
         env['CRYSTAL_BALL_CONFIG']=config
-    proc=subprocess.Popen([sys.executable,'-m','crystal_ball.tool_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env,start_new_session=True)
+    proc=spawn_owned([sys.executable,'-m','crystal_ball.tool_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env)
     try:
         out,err=proc.communicate(dumps({'action':action,**params}),timeout=1800)
     except BaseException:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(proc.pid,signal.SIGKILL)
-        proc.communicate(); raise
+        raise
+    finally:
+        proc.close()
     if proc.returncode:
         raise StageError('tool',err or out)
     result=json.loads(out)

@@ -5,6 +5,7 @@ import tempfile
 
 from .cache import Store
 from .config import load
+from .platforms.process import spawn_owned
 
 WIDTH,HEIGHT=96,54
 
@@ -58,7 +59,7 @@ def _scan(file, config=None):
         pending={'luminance':None,'red':None}
         # Stderr is file-backed so continuous stdout reads cannot deadlock.
         with tempfile.TemporaryFile(dir=directory) as log:
-            proc=subprocess.Popen(['ffmpeg','-nostdin','-v','info','-threads','1','-i',str(file),'-map','0:V:0','-an','-vf',f'scale={WIDTH}:{HEIGHT},showinfo','-fps_mode','passthrough','-threads','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],stdout=subprocess.PIPE,stderr=log)
+            proc=spawn_owned(['ffmpeg','-nostdin','-v','info','-threads','1','-i',str(file),'-map','0:V:0','-an','-vf',f'scale={WIDTH}:{HEIGHT},showinfo','-fps_mode','passthrough','-threads','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1'],stdout=subprocess.PIPE,stderr=log)
             try:
                 size=WIDTH*HEIGHT*3
                 while True:
@@ -95,9 +96,7 @@ def _scan(file, config=None):
                 if proc.returncode:
                     raise RuntimeError('visual decode failed')
             finally:
-                if proc.poll() is None:
-                    proc.kill(); proc.wait()
-                proc.stdout.close()
+                proc.close()
             log.seek(0)
             text=log.read().decode(errors='replace')
         times=[float(t) for t in re.findall(r'\bn:\s*\d+.*?pts_time:([\d.eE+\-]+)',text)]

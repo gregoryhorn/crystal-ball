@@ -92,16 +92,13 @@ def test_hermes_host_worker_uses_effective_path(tmp_path,monkeypatch):
     assert seen
 
 
-def test_real_stages_from_host_without_numpy_or_pil(tmp_path):
+def test_real_stages_from_host_without_numpy_or_pil(tmp_path, native_engine):
     video=tmp_path/'silent.mp4'
     subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
                     'color=s=160x90:r=25:d=0.4','-an','-threads','1',str(video)],
                    check=True,capture_output=True,timeout=15)
     # A distinct configured engine path makes accidental host execution detectable.
-    engine=tmp_path/'see-python'; launches=tmp_path/'launches'
-    engine.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> '+shlex.quote(str(launches))+
-                      '\nexec '+shlex.quote(sys.executable)+' "$@"\n')
-    engine.chmod(0o755)
+    engine,launches=native_engine('see-python',False)
     cfg=load(); cfg['see']['python']=str(engine); cfg['scenes']['python']='missing-scenes'
     run=tmp_path/'run'; run.mkdir()
     req={'file':str(video),'run_dir':str(run),'config':cfg,'cache_dir':cfg['cache_dir'],
@@ -143,7 +140,9 @@ print('ok')
 
 
 @pytest.mark.parametrize('stage',['review','ocr','editing'])
-def test_unavailable_see_runtime_skips_with_reason(tmp_path,stage):
+def test_unavailable_see_runtime_skips_with_reason(tmp_path,stage,monkeypatch):
+    # Intentional core-first routing change: this assertion covers a thin host.
+    monkeypatch.setattr(core,'core_media_python',lambda cfg:cfg['see']['python'])
     cfg=load(); cfg['see']['python']=str(tmp_path/'missing-see')
     result=core.run_stage(stage,{'run_dir':str(tmp_path),'config':cfg,'cache_dir':cfg['cache_dir']})
     assert result['checks'][0]['status']=='SKIP'
@@ -284,7 +283,7 @@ def test_maintenance_cli_and_hermes_reports_agree(tmp_path):
     video=tmp_path/'text.mp4'
     subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
                     'color=c=0x173f65:s=720x1280:r=25:d=3','-vf',
-                    "drawtext=font=DejaVuSans-Bold:text='NEW PLACE':fontsize=64:fontcolor=white:x=100:y=1190",
+                    "drawtext=font="+('Arial' if os.name=='nt' else 'DejaVuSans-Bold')+":text='NEW PLACE':fontsize=64:fontcolor=white:x=100:y=1190",
                     '-an','-threads','1',str(video)],check=True,capture_output=True,timeout=20)
     rules=tmp_path/'rules.md'; rules.write_text('Use "NEW PLACES".\n')
     with Path(os.environ['CRYSTAL_BALL_CONFIG']).open('a') as config:
@@ -337,14 +336,15 @@ def test_host_stage_preserves_injected_auxiliary_package(tmp_path,monkeypatch):
     assert result['checks'][0]['status']=='PASS',result
 
 
-def test_see_runtime_without_optional_modules_skips_cleanly(tmp_path):
+def test_see_runtime_without_optional_modules_skips_cleanly(tmp_path,native_engine,monkeypatch):
+    monkeypatch.setattr(core,'core_media_python',lambda cfg:cfg['see']['python'])
+    from crystal_ball import workers
+    monkeypatch.setattr(workers,'core_media_python',lambda cfg:cfg['see']['python'])
     video=tmp_path/'silent.mp4'
     subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i',
                     'color=s=160x90:r=25:d=0.4','-an','-threads','1',str(video)],
                    check=True,capture_output=True,timeout=15)
-    engine=tmp_path/'empty-see-python'
-    engine.write_text('#!/bin/sh\nexec '+shlex.quote(sys.executable)+' -S "$@"\n')
-    engine.chmod(0o755)
+    engine,_=native_engine('empty-see-python',True)
     cfg=load(); cfg['see']['python']=str(engine); cfg['scenes']['python']='missing-scenes'
     req={'file':str(video),'run_dir':str(tmp_path),'config':cfg,'cache_dir':cfg['cache_dir'],
          'platform':'youtube','meta':core.probe(video),'rules':{'terms':[],'active':''},

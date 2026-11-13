@@ -5,7 +5,7 @@ import json
 import math
 import os
 import re
-import selectors
+
 import signal
 import subprocess
 import sys
@@ -16,6 +16,8 @@ from pathlib import Path
 from ..cache import Store, dumps, runtime_stamp
 from ..config import load
 from ..util import command, row, skip, engine_python_env, has_audio_stream, StageError, error_result, error_summary
+from ..platforms.process import spawn_owned, run_owned
+from ..platforms.streams import LineReader
 
 class Worker:
     def __init__(self, config=None):
@@ -23,13 +25,15 @@ class Worker:
     def start(self):
         env=engine_python_env(self.cfg['hear']['python'],{'HF_HUB_OFFLINE':'1','OMP_NUM_THREADS':'1'})
         # Discover CUDA library directories using the selected interpreter's prefix.
-        prefix=command([self.cfg['hear']['python'],'-c','import sys; print(sys.prefix)'],15,env).strip()
-        libs=[str(p) for kind in ('cublas','cudnn') for p in Path(prefix).glob(f'lib/python*/site-packages/nvidia/{kind}/lib')]
-        env['LD_LIBRARY_PATH']=os.pathsep.join(libs+([env['LD_LIBRARY_PATH']] if env.get('LD_LIBRARY_PATH') else []))
+        if os.name!='nt':
+            prefix=command([self.cfg['hear']['python'],'-c','import sys; print(sys.prefix)'],15,env).strip()
+            libs=[str(p) for kind in ('cublas','cudnn') for p in Path(prefix).glob(f'lib/python*/site-packages/nvidia/{kind}/lib')]
+            env['LD_LIBRARY_PATH']=os.pathsep.join(libs+([env['LD_LIBRARY_PATH']] if env.get('LD_LIBRARY_PATH') else []))
         # The source checkout is importable even before the user installs the package.
-        self.stderr=tempfile.TemporaryFile(mode='w+t')
+        self.stderr=tempfile.TemporaryFile(mode='w+t', encoding='utf-8')
         try:
-            self.proc=subprocess.Popen([self.cfg['hear']['python'],'-u','-m','crystal_ball.senses.hear_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.stderr,text=True,env=env,start_new_session=not bool(os.environ.get('CRYSTAL_BALL_STAGE')))
+            self.proc=spawn_owned([self.cfg['hear']['python'],'-u','-m','crystal_ball.senses.hear_worker'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.stderr,text=True,env=env)
+            self.reader=LineReader(self.proc.stdout)
         except BaseException:
             self.stderr.close()
             raise
@@ -41,11 +45,7 @@ class Worker:
             req={'id':self.counter,'op':'transcribe','file':str(file),'model':self.cfg['hear']['model'],'device':self.cfg['hear']['device'],'min_free_vram_gb':self.cfg['hear']['min_free_vram_gb'],'cpu_threads':self.cfg['hear']['cpu_threads']}
             try:
                 self.proc.stdin.write(dumps(req)+'\n'); self.proc.stdin.flush()
-                with selectors.DefaultSelector() as selector:
-                    selector.register(self.proc.stdout,selectors.EVENT_READ)
-                    if not selector.select(timeout):
-                        raise TimeoutError('hear worker timed out')
-                    line=self.proc.stdout.readline()
+                line=self.reader.get(timeout)
                 if not line:
                     self.stderr.seek(0)
                     raise StageError('hear', self.stderr.read() or 'hear worker exited without a response')
@@ -60,10 +60,18 @@ class Worker:
                 raise
     def close(self):
         if self.proc:
-            with contextlib.suppress(ProcessLookupError):
-                (os.kill if os.environ.get('CRYSTAL_BALL_STAGE') else os.killpg)(self.proc.pid,signal.SIGKILL)
-            self.proc.communicate(); self.proc=None
-            self.stderr.close()
+            proc,self.proc=self.proc,None
+            try:
+                with contextlib.suppress(OSError):
+                    proc.stdin.close()
+                try:
+                    proc.proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.terminate_tree('hear close')
+            finally:
+                proc.close()
+                self.reader.close()
+                self.stderr.close()
     def __enter__(self):
         return self
     def __exit__(self,*args):
@@ -94,7 +102,7 @@ def whispercpp(file,cfg):
         wav=Path(td)/'audio.wav'; out=Path(td)/'transcript'
         command(['ffmpeg','-nostdin','-v','error','-i',file,'-vn','-ac','1','-ar','16000',wav],180)
         command(whispercpp_args(cfg,wav,out),300)
-        data=json.loads(out.with_suffix('.json').read_text())
+        data=json.loads(out.with_suffix('.json').read_text(encoding='utf-8'))
         segments=[]
         for s in data.get('transcription',[]):
             words=[]
@@ -220,7 +228,7 @@ def _voice_balance(file,transcript,config=None):
                 raise RuntimeError('configured demucs command produced no vocals.wav')
             stem=stems[0]
         def pcm(path):
-            r=subprocess.run(['ffmpeg','-nostdin','-v','error','-i',str(path),'-vn','-ac','1','-ar','16000','-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180)
+            r=run_owned(['ffmpeg','-nostdin','-v','error','-i',str(path),'-vn','-ac','1','-ar','16000','-f','f32le','pipe:1'],capture_output=True,check=True,timeout=180)
             return np.frombuffer(r.stdout,dtype='<f4')
         mix=pcm(file)
         mask=np.zeros(len(mix),dtype=bool)
@@ -244,7 +252,7 @@ def audio_stage(req):
     checks.append(row('speech_gaps','WARN' if gaps else 'PASS',f'{len(gaps)} internal speech gaps >=2s; may be intentional',gaps))
     details={}
     if req.get('script'):
-        match=script_match(Path(req['script']).read_text(),transcript,req['rules']['terms'])
+        match=script_match(Path(req['script']).read_text(encoding='utf-8'),transcript,req['rules']['terms'])
         details['script_match']=match
         checks.append(row('script_match','WARN' if match['wer'] else 'PASS',f"WER {match['wer']:.3f}; ASR comparison, inspect differences"))
     try:

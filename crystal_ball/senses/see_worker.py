@@ -10,6 +10,8 @@ from ..config import load
 from ..cache import runtime_stamp
 
 def main():
+    from ..platforms.windows.dlls import initialize
+    initialize()
     req=json.load(sys.stdin); cfg=load()
     see.CACHE=str(Path(cfg['cache_dir'])/'indexes')
     if req['action']=='index':

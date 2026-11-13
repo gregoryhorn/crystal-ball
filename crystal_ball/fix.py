@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from .platforms.process import run_owned
 from .cache import fingerprint
 from .config import load
 from .checks import platforms
@@ -42,7 +43,7 @@ def apply_fix(doc,force=False,config=None):
             target=Path(td)/output.name
             first=['ffmpeg','-nostdin','-v','info','-i',str(path),'-vn','-af',f"loudnorm=I={spec['lufs']}:TP={spec['tp']}:LRA=11:print_format=json",'-f','null','-']
             import subprocess
-            r=subprocess.run(first,capture_output=True,text=True,check=True,timeout=240)
+            r=run_owned(first,capture_output=True,text=True,check=True,timeout=240)
             values=json.JSONDecoder().raw_decode(r.stderr[r.stderr.rfind('{'):])[0]
             names={'input_i':'measured_I','input_tp':'measured_TP','input_lra':'measured_LRA','input_thresh':'measured_thresh','target_offset':'offset'}
             if not all(float('-inf')<float(values[k])<float('inf') for k in names):

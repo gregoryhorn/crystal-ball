@@ -37,7 +37,31 @@ Privacy scan currently FAILS on 10 pre-existing private-path/name findings in
 gpu-broker-adoption.md, at lines 52, 56, 95, 96 and 99. That historical record and
 privacy assertions are unchanged. Archive scans are separate from repository scans.
 
-Next implementation checkpoint: owned subprocess/pipe transport and core runtime,
-then opt-in setup/packaging and final Linux aggregate checks. W01-W17 native
+Owned-runtime checkpoint: platforms/process.py, posix.py, windows/jobs.py and
+windows/launcher.py contain process ownership; Windows target launch follows
+checked self-assignment to a KILL_ON_JOB_CLOSE Job Object. POSIX nested work
+inherits the outer owned stage session. util/workers/hermes/api and direct media
+launches now use that boundary. Hear retains one worker and reads complete lines
+through a queue/thread, not selectors. Cleanup/drains have bounded waits. Native
+Win32 API declarations/assignment and host-job nesting remain unexecuted.
+
+platforms/runtime.py chooses numpy/Pillow core work before the configured See
+fallback and probes actual sysconfig sites for cache invalidation. Doctor probes
+optional packages in their engine, reports executable paths/releases and CPU
+configuration; See now disables broker admission for configured CPU. Engine-only
+Windows DLL paths use lifetime-held os.add_dll_directory handles. No vendor source
+was changed; checks.py sanitizes PATH and checks the vendor's observed selections.
+
+Linux checkpoint: python -m pytest tests/platforms/test_processes.py
+tests/platforms/test_runtime.py tests/test_second_trial.py tests/test_trial_regressions.py
+tests/test_admission_install.py tests/test_gpu_sessions.py tests/test_quality.py
+-q -p no:cacheprovider --basetemp $Scratch/pytest: 102 passed in 19.80s, exit 0.
+This includes real child/grandchild deadline cleanup, persistent stub transport,
+core/thin-host workers, actual signal/OCR fixtures and broker fakes, not models.
+The unavailable-See tests now explicitly cover thin hosts because core-first
+routing is the intentional design change. Inference-only mocks moved from
+subprocess.run to run_owned; assertions about GPU cleanup were preserved.
+
+Next checkpoint: opt-in setup/packaging and final Linux aggregate checks. W01-W17 native
 acceptance, actual model inference and Windows installed-host integration remain
 open until real machine execution is possible under the user's permissions.

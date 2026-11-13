@@ -7,6 +7,8 @@ import argparse, hashlib, json, os, subprocess, sys, tempfile, shutil, re, time,
 
 from ..config import load
 from ..cache import fingerprint, Store
+from ..platforms.process import run_owned
+from ..platforms.locks import replace
 from pathlib import Path
 CACHE = str(Path(load()["cache_dir"]) / "indexes")
 VIDEO = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mts", ".mxf"}
@@ -60,7 +62,8 @@ def device():
     global _session
     from ..gpu import Session
     if _session is None:
-        _session = Session(load()['see']['min_free_vram_gb'], purpose='CLIP embeddings', model='clip')
+        cfg = load()['see']
+        _session = Session(cfg['min_free_vram_gb'], purpose='CLIP embeddings', model='clip', enabled=cfg['device']=='cuda')
         if _session.device == 'cuda':
             import torch
             if not torch.cuda.is_available():
@@ -181,7 +184,7 @@ def embed_text(model, proc, dev, text):
 
 
 def duration(path):
-    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+    r = run_owned(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
                        capture_output=True, text=True)
     try:
         return float(r.stdout.strip())
@@ -199,7 +202,7 @@ def extract(path, outdir, every, cap, mode):
     scale = "scale=-2:336"
     if mode == "scene":
         vf = f"select='eq(n,0)+gt(scene,0.3)',showinfo,{scale}"
-        r = subprocess.run(["ffmpeg", "-nostdin", "-v", "info", "-i", path, "-an", "-vf", vf, "-vsync", "vfr",
+        r = run_owned(["ffmpeg", "-nostdin", "-v", "info", "-i", path, "-an", "-vf", vf, "-vsync", "vfr",
                             "-q:v", "3", pat], capture_output=True, text=True)
         ts = [float(m) for m in re.findall(r"pts_time:([0-9.]+)", r.stderr)]
         files = sorted(f for f in os.listdir(outdir) if f.startswith("f_"))
@@ -209,7 +212,7 @@ def extract(path, outdir, every, cap, mode):
             pairs = [pairs[int(i * step)] for i in range(cap)]
         return pairs
     vf = f"fps=1/{every:.3f},{scale}"
-    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", path, "-an", "-vf", vf, "-q:v", "3", pat])
+    run_owned(["ffmpeg", "-nostdin", "-v", "error", "-i", path, "-an", "-vf", vf, "-q:v", "3", pat])
     files = sorted(f for f in os.listdir(outdir) if f.startswith("f_"))
     return [(round(i * every, 2), os.path.join(outdir, f)) for i, f in enumerate(files)][:cap]
 
@@ -219,7 +222,7 @@ def load_index(idir):
     mp = os.path.join(idir, "meta.json")
     if not os.path.exists(mp):
         return None
-    with open(mp) as f:
+    with open(mp, encoding='utf-8') as f:
         meta = json.load(f)
     meta["emb"] = np.load(os.path.join(idir, meta.get("emb_file", "emb.npy")))
     return meta
@@ -237,10 +240,12 @@ def save_index(idir, meta, emb):
     try:
         with open(etmp, "wb") as f:
             np.save(f, emb.astype("float32"))
-        os.replace(etmp, ep)
-        with open(mp, "w") as f:
+            f.flush(); os.fsync(f.fileno())
+        replace(etmp, ep)
+        with open(mp, "w", encoding='utf-8') as f:
             json.dump({**meta, "emb_file": emb_name}, f)
-        os.replace(mp, os.path.join(idir, "meta.json"))
+            f.flush(); os.fsync(f.fileno())
+        replace(mp, os.path.join(idir, "meta.json"))
     finally:
         for p in (etmp, mp):
             if os.path.exists(p):
