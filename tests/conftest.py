@@ -45,7 +45,10 @@ class Hidden(importlib.abc.MetaPathFinder):
             raise ModuleNotFoundError('engine deliberately lacks '+fullname)
 sys.meta_path.insert(0,Hidden())
 '''
-        (site/'sitecustomize.py').write_text(code,encoding='utf-8')
+        # Debian's stdlib sitecustomize can precede the venv's site-packages.
+        # A uniquely named .pth hook runs without relying on that import order.
+        (site/'_crystal_ball_test_runtime.py').write_text(code,encoding='utf-8')
+        (site/'crystal-ball-test-runtime.pth').write_text('import _crystal_ball_test_runtime\n',encoding='utf-8')
         return exe,launches
     return create
 

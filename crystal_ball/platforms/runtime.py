@@ -18,7 +18,15 @@ def core_media_python(cfg):
 
 def describe_runtime(python):
     from ..util import engine_python_env
-    code = "import json,sys,sysconfig; print(json.dumps({'python':sys.executable,'prefix':sys.prefix,'sites':list(set(sysconfig.get_path(k) for k in ('purelib','platlib')))}))"
+    code = """import json, os, site, sys, sysconfig
+paths = [sysconfig.get_path(k) for k in ('purelib', 'platlib')]
+paths.extend(site.getsitepackages())
+user = site.getusersitepackages()
+paths.extend([user] if isinstance(user, str) else user)
+sites = list(dict.fromkeys(os.path.normcase(os.path.abspath(p))
+                           for p in paths if p and os.path.isdir(p)))
+print(json.dumps({'python': sys.executable, 'prefix': sys.prefix, 'sites': sites}))
+"""
     result = run_owned([python, '-c', code], env=engine_python_env(python), capture_output=True, text=True, timeout=10, check=True)
     return json.loads(result.stdout)
 

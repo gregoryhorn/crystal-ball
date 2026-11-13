@@ -177,3 +177,35 @@ installation or remote write occurred. The final rebuilt wheel was force-reinsta
 only into the scratch test venv and reran the isolated smoke: exit 0, identical
 counts and five frames. The candidate is the local main commit containing this
 record (inspect `git log -1`); no release is implied.
+
+## Debian runtime regression correction
+
+Scope/alignment: Claude's review of 42bb427 requested both host suites green;
+this correction uses the same canonical r1 design/acceptance digests above,
+particularly D4's actual-site discovery and preserved core-first/thin-host routing.
+`platforms/runtime.py` now combines sysconfig, site.getsitepackages() and user
+site paths, normalizes/deduplicates them and excludes nonexistent/non-directories.
+A deterministic regression covers duplicate/missing/file paths and system numpy
+metadata. API reference: https://docs.python.org/3.14/library/site.html .
+
+Both reported failures reproduced on /usr/bin/python3 (3.14.4). The thin-host
+selection assertion actually chose the configured engine correctly: Debian's
+stdlib sitecustomize.py shadowed the fixture's launch logger. `tests/conftest.py`
+now uses a uniquely named .pth-loaded module for logging/module hiding.
+`test_second_trial.py` uses a real no-system-packages host venv instead of -S,
+asserts engine selection and preserves every stage/result/launch assertion.
+Production core selection, dependencies, versions and media contracts are unchanged.
+
+Full suites ran with PYTHONDONTWRITEBYTECODE=1, HF_HUB_OFFLINE=1 and
+TRANSFORMERS_OFFLINE=1; command for each was `$Python -m pytest -q -rs
+-p no:cacheprovider --basetemp $Scratch/cb-review-full314` (full311 for 3.11).
+$Scratch is this developer profile's cache/scratch. Observed exit 0 for both:
+- /usr/bin/python3 (3.14.4): 258 passed, 8 skipped, 10 subtests passed in 29.89s;
+  two existing PurePath.as_uri deprecation warnings in report.py.
+- /home/gregory/.hermes/profiles/app-developer/cache/scratch/crystal-windows-venv/bin/python
+  (3.11.15): 258 passed, 8 skipped, 10 subtests passed in 28.30s.
+Both skip only the opt-in live-model tests. Focused runtime/second-trial suites:
+33 passed on each interpreter. Candidate: local main commit containing this
+appendix, parent 42bb427; changed runtime.py and the three test files named above.
+No push/tag/release/version bump/profile install. Native Windows remains untested;
+this correction does not change the earlier privacy-gate limitation.

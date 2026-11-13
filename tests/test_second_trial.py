@@ -112,6 +112,7 @@ from crystal_ball.frames import probe
 from crystal_ball.senses.read import read_text
 from crystal_ball.senses.hear import voice_balance
 req=json.loads(sys.argv[2]); req['meta']=probe(req['file'])
+assert core.core_media_python(req['config']) == req['config']['see']['python']
 review=core.run_stage('review',req)
 assert review.get('frames'), review
 ocr=core.run_stage('ocr',{**req,'review':review})
@@ -129,7 +130,13 @@ else:
     raise AssertionError('silent video cannot yield PCM')
 print('ok')
 '''
-    result=subprocess.run([sys.executable,'-S','-c',code,
+    # -S only hides sites in this process; normal child launches restore them.
+    # A real core-less host keeps that isolation across the worker boundary.
+    import venv
+    host=tmp_path/'thin-host'
+    venv.EnvBuilder(with_pip=False,system_site_packages=False).create(host)
+    host_python=host/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+    result=subprocess.run([str(host_python),'-c',code,
                            str(Path(core.__file__).resolve().parent.parent),dumps(req)],
                           env=foreign_python_env(),capture_output=True,text=True,timeout=45)
     assert result.returncode==0,result.stdout+result.stderr
