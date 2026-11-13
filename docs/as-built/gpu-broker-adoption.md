@@ -83,3 +83,31 @@ Activation is verified for newly spawned CLI/workers, not an in-memory gateway
 reload or live GPU inference/release. No production acquisition, GPU model job,
 unload test, stop, restart, kill or push was performed; vLLM/PRISM were untouched.
 The parent owns broker initialization and the single live integration check.
+
+## Broker dependency activation follow-up
+
+Parent verification resolved the optional-import blocker without changing public
+Crystal Ball code or profile settings. Both configured engine environments lacked
+setuptools, so direct offline editable builds failed without changing either
+environment. A PEP 660 editable wheel was built with the existing system
+setuptools and installed using uv pip install --offline --no-deps into:
+
+- /home/gregory/.hermes/profiles/video/tools/venvs/asr-gpu (Python 3.14.4).
+- /home/gregory/.hermes/profiles/video/tools/stable-audio-open/venv (Python 3.11.15).
+
+Only gpu-broker 0.1.0 was added. The installed .pth references the durable
+/home/gregory/Projects/gpu-broker/src checkout, not its temporary build wheel.
+No model dependencies were upgraded and no source copy/restart was needed.
+Outside the checkout, both interpreters read back gpu_broker from that source,
+and the installed vendor Session API returned CPU/no handle when disabled,
+without torch/faster-whisper imports or acquisition. Installed vendor bytes and
+manifest matched the candidate. Parent reran tests/test_gpu_sessions.py: 13
+passed in 0.11s, exit 0, with fake broker/model boundaries. Earlier 208-test gate
+still covers the unchanged Crystal Ball source; this is not live CUDA evidence.
+
+Candidate source and helper are now effective for newly spawned workers. The
+parent's single idle-Comfy live check failed without a verified memory drop;
+production admission is quarantined. CPU fallback remains active on that denial.
+No gateway, Crystal Ball or protected service was restarted; no live model job,
+kill, push or second unload test was performed. Earlier dependency-unavailable
+paragraph describes the pre-follow-up state, not current importability.
