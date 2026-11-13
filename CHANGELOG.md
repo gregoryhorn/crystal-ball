@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0
+
+- Native Windows support (Windows 10/11 x64, CPython 3.11): Windows paths and
+  storage, trusted ffmpeg/ffprobe discovery, owned process trees, consent-based
+  CPU setup for Hear/See, packaged Windows locks and a PowerShell verify script.
+  Verified on a real Windows 11 machine.
+- Checks now match the media: still images, audio-only files, video and video
+  without audio each get only the checks that apply. Inapplicable checks report
+  "Not checked" with a plain reason instead of failing; images no longer hit
+  video-platform rules and WAV files are accepted. New optional `--shape`.
+- Missing optional OCR (Tesseract) is reported as Not checked, not a failure.
+- Linux: find packages installed in Debian/Ubuntu system site-packages.
+
 ## 1.1.1
 
 - Report the exact number of `not_checked` entries left out of a compact result

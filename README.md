@@ -86,8 +86,8 @@ Open the actual returned report.md, report.html and sibling full.json. Saved
 reports/contact sheets persist without rerunning analysis; no assets are uploaded.
 Ctrl+C cancels only the owned action tree, not other applications. UNC parsing
 is supported, but initial locking/publication scope is local NTFS, not SMB.
-Native Windows execution and installed Hermes UI integration still require the
-checks recorded in docs/as-built/windows-support-2026-11-13.md.
+Native Windows was verified on Windows 11 x64 with CPython 3.11 (full test suite,
+privacy scan and release build); see docs/as-built/windows-support-2026-11-13.md.
 
 The hear engine receives mono **float32 16 kHz NumPy PCM decoded by ffmpeg**,
 not a filename: this bypasses incompatible PyAV decoders. Its persistent JSON

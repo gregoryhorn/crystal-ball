@@ -12,7 +12,7 @@ from .senses.judge import vision_stage, crosscheck_vision
 from .senses.hear import audio_stage
 from .fix import apply_fix
 from .platforms.runtime import core_media_python
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 MAX_BYTES = 1500
 TIMEOUTS = {"signal":180,"review":120,"ocr":120,"audio":300,"vision":100,"editing":600}
 CACHE = None

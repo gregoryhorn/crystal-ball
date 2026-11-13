@@ -1,5 +1,5 @@
 name: crystal-ball
-version: "1.1.1"
+version: "1.2.0"
 description: Four media senses with compact cached quality evidence
 license: MIT
 provides_tools: [crystal_ball]

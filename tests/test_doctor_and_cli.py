@@ -80,4 +80,4 @@ def test_cli_setup_and_input_errors(capsys):
 
 def test_module_entry_point():
     result=subprocess.run([sys.executable,'-E','-m','crystal_ball','--version'],capture_output=True,text=True,timeout=10)
-    assert result.returncode==0 and result.stdout.strip()=='1.1.1'
+    assert result.returncode==0 and result.stdout.strip()=='1.2.0'

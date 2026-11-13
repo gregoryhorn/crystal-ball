@@ -1,0 +1,60 @@
+    The above exception was the direct cause of the following exception:
+    
+    Traceback (most recent call last):
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\stage_worker.py", line 24, in main
+        value=_read_text(req['file'],req.get('at'),req['config'])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\senses\read.py", line 127, in _read_text
+        return ocr_frames(file,review['frames'],cfg)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\senses\read.py", line 58, in ocr_frames
+        available=command(['tesseract','--list-langs'],15,env).splitlines()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\util.py", line 85, in command
+        proc = run_owned([str(x) for x in cmd], capture_output=True, text=True,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\platforms\process.py", line 135, in run_owned
+        with spawn_owned(argv, **kwargs) as proc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\platforms\process.py", line 124, in spawn_owned
+        raise StageError('process', exc, failure['log']) from exc
+    crystal_ball.util.StageError: Traceback (most recent call last):
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\platforms\process.py", line 100, in spawn_owned
+        argv[0] = resolve_tool(argv[0], env)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\platforms\executables.py", line 38, in resolve_tool
+        raise FileNotFoundError(f'native executable not found on trusted PATH: {name}')
+    FileNotFoundError: native executable not found on trusted PATH: tesseract
+%USERPROFILE%\AppData\Local\Temp\cbv\src\crystal_ball\workers.py:31: crystal_ball.util.StageError: Traceback (most recent call last):
+E   AssertionError: {'status': 'failed', 'reason': 'ffmpeg: RuntimeError: [out#0/matroska @ 00000202d7c44100] Nothing was written into out...ackets.', 'log': '%USERPROFILE%\\AppData\\Local\\Temp\\cbv\\pt\\test_fix_preserves_audio_codec1\\cache\\errors.log'}
+    assert 'failed' == 'written'
+      
+      - written
+      + failed
+%USERPROFILE%\AppData\Local\Temp\cbv\src\tests\test_senses.py:247: AssertionError: {'status': 'failed', 'reason': 'ffmpeg: RuntimeError: [out#0/matroska @ 00000202d7c44100] Nothing was written into out...ackets.', 'log': '%USERPROFILE%\\AppData\\Local\\Temp\\cbv\\pt\\test_fix_preserves_audio_codec1\\cache\\errors.log'}
+=========================== short test summary info ===========================
+FAILED tests/engines/test_setup.py::test_print_only_and_noninteractive - asse...
+FAILED tests/platforms/test_executables.py::test_no_cwd_or_relative_hijack - ...
+FAILED tests/test_doctor_and_cli.py::test_offline_doctor_reports_versions_and_missing_engines
+FAILED tests/test_doctor_and_cli.py::test_cli_setup_and_input_errors - assert...
+FAILED tests/test_edit_detection.py::test_scenes_fallback_known_hard_cuts_and_reuse
+FAILED tests/test_edit_detection.py::test_rhythm_stub_protocol_cache_and_exports
+FAILED tests/test_gpu_sessions.py::test_clip_without_cuda_preserves_cpu_fallback
+FAILED tests/test_gpu_sessions.py::test_clip_command_owns_load_inference_and_cleanup[False]
+FAILED tests/test_gpu_sessions.py::test_clip_command_owns_load_inference_and_cleanup[True]
+FAILED tests/test_gpu_sessions.py::test_clip_denied_path_does_not_touch_cuda
+FAILED tests/test_media_applicability.py::test_cli_and_tool_share_real_media_report[image]
+FAILED tests/test_media_applicability.py::test_cli_and_tool_share_real_media_report[audio-only]
+FAILED tests/test_media_applicability.py::test_cli_and_tool_share_real_media_report[video]
+FAILED tests/test_media_applicability.py::test_cli_and_tool_share_real_media_report[video-without-audio]
+FAILED tests/test_media_applicability.py::test_still_ocr_safe_zone_requires_shape_and_single_time
+FAILED tests/test_quality.py::test_real_ocr_safe_zone_and_misspelling - Asser...
+FAILED tests/test_quality.py::test_hooks_debounce_once_profile_and_ack - KeyE...
+FAILED tests/test_quality.py::test_candidates_and_registration - AssertionErr...
+FAILED tests/test_quality.py::test_post_hook_background_integration - KeyErro...
+FAILED tests/test_second_trial.py::test_real_stages_from_host_without_numpy_or_pil
+FAILED tests/test_second_trial.py::test_maintenance_cli_and_hermes_reports_agree
+FAILED tests/test_senses.py::test_config_precedence - AssertionError: assert ...
+FAILED tests/test_senses.py::test_cross_action_frame_reuse - crystal_ball.uti...
+FAILED tests/test_senses.py::test_fix_preserves_audio_codec_in_other_containers[.mkv-flac-flac]
+24 failed, 265 passed, 8 deselected, 10 subtests passed in 115.36s (0:01:55)
