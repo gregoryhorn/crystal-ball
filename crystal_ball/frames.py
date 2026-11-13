@@ -3,17 +3,28 @@ from pathlib import Path
 from .util import command, row
 from .checks import load_qc
 def probe(path):
+    from .applicability import classify
     doc = json.loads(command(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", path], 15))
+    image_formats = {'image2','png_pipe','jpeg_pipe','webp_pipe','bmp_pipe','tiff_pipe','gif','apng'}
+    if image_formats.intersection(doc.get('format',{}).get('format_name','').split(',')):
+        doc = json.loads(command(['ffprobe','-v','error','-count_frames','-show_format','-show_streams','-of','json',path],15))
+    kind = classify(doc)
+    if kind is None:
+        return {'media_kind': None, 'streams': doc.get('streams', []), 'width': 0, 'height': 0, 'duration': 0}
     video = next((s for s in doc["streams"] if s["codec_type"] == "video" and
                   not s.get("disposition", {}).get("attached_pic")), None)
     if not video:
-        raise ValueError("file has no video stream")
+        return {'media_kind': kind, 'width': 0, 'height': 0, 'duration': float(doc['format'].get('duration', 0)), 'streams': doc['streams']}
     width, height = video["width"], video["height"]
-    rotation = next((s.get("rotation", 0) for s in video.get("side_data_list", []) if "rotation" in s), 0)
+    if kind == 'image':
+        from PIL import Image, ImageOps
+        with Image.open(path) as image:
+            width, height = ImageOps.exif_transpose(image).size
+    rotation = next((s.get("rotation", 0) for s in video.get("side_data_list", []) if "rotation" in s), video.get('tags', {}).get('rotate', 0))
     if abs(int(rotation)) % 180 == 90:
         width, height = height, width
     return {"width": width, "height": height, "duration": float(doc["format"].get("duration", 0)),
-            "streams": doc["streams"]}
+            "streams": doc["streams"], "media_kind": kind}
 
 def caption_times(path):
     if not path:

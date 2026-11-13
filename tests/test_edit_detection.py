@@ -226,7 +226,8 @@ def test_check_integrates_flash_and_reuses_shots(tmp_path):
     assert result['verdict']=='FAIL'
     assert any(item['id']=='flash' and item['status']=='FAIL' for item in result['items'])
     full=json.loads(Path(result['report']).with_name('full.json').read_text())
-    assert all(item['id']!='cut_sync' for item in full['checks'])
+    # MA-r1 retains an explicit omission instead of silently dropping this family.
+    assert all(item['status']=='SKIP' for item in full['checks'] if item['id']=='cut_sync')
     assert full['stages']['review']['scenes']==full['stages']['editing']['scenes']['paths']
     assert any(f.get('at_cut') for f in full['stages']['review']['frames'])
 

@@ -18,6 +18,9 @@ TIMEOUTS = {"signal":180,"review":120,"ocr":120,"audio":300,"vision":100,"editin
 CACHE = None
 
 def review_stage(req):
+    if req.get('meta', {}).get('media_kind') == 'image':
+        from .applicability import image_review
+        return image_review(req)
     cfg=req.get("config") or load()
     options={"captions":fingerprint(req["captions"]) if req.get("captions") else None,"version":VERSION,
              "scenes":cfg["scenes"],"runtime":runtime_stamp(cfg)}
@@ -32,7 +35,7 @@ def run_stage(stage, request, timeout=None):
         request_path=Path(request["run_dir"])/f"{stage}-request.json"
         atomic(request_path,dumps(request))
         cfg=request.get('config') or load()
-        python=core_media_python(cfg) if stage in {'review','ocr','editing'} else sys.executable
+        python=core_media_python(cfg) if stage in {'review','ocr','editing'} or stage == 'signal' and request.get('meta',{}).get('media_kind') == 'image' else sys.executable
         env=engine_python_env(python,{"OMP_THREAD_LIMIT":"1","OPENBLAS_NUM_THREADS":"1","HF_HUB_OFFLINE":"1","CRYSTAL_BALL_STAGE":"1"})
         value=process_json([python,"-m","crystal_ball.stage_worker",stage,request_path],timeout or TIMEOUTS[stage],env)
         if not isinstance(value,dict) or "error" in value:
@@ -43,40 +46,8 @@ def run_stage(stage, request, timeout=None):
         return {**skip(stage,failure['error']), 'log':failure['log']}
 
 def signal_stage(req):
-    qc = load_qc()
-    sys.argv = ["qc.py", req["file"], "--platform", req["platform"], "--json", "--no-frames"]
-    if req.get("captions"):
-        sys.argv += ["--captions", req["captions"]]
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-        try:
-            qc.main()
-        except SystemExit:
-            pass
-    text = out.getvalue()
-    doc = json.loads(text[text.index("{"):])
-    if not doc.get("checks"):
-        raise ValueError("qc.py returned no checks")
-    checks = []
-    for r in doc["checks"]:
-        value = str(r.get("value", ""))
-        times = [[float(s), float(e)] for s, e in re.findall(r"(\d+\.\d+)-(\d+\.\d+)s", value)]
-        hint=r.get('fix','')
-        if hint:
-            if 'loudness.py' in hint:
-                hint='crystal-ball check FILE --fix; measured levels only, always to a new file'
-            elif 'caption.py' in hint:
-                hint='review caption delivery needs and edit the caption source; re-render if needed'
-            elif 'sync.py' in hint:
-                hint='align the source audio and video, then re-render and re-check'
-            elif any(name in hint for name in ('audio.py','silence.py')):
-                hint='inspect these audio times, adjust the source mix if needed, and re-render'
-            elif any(name in hint for name in ('look.py','qc frames')):
-                hint='inspect the timestamped report frames and source timeline; re-render if unintended'
-            elif 'export.py' in hint:
-                hint='re-export the source to the stated platform format, then re-check'
-        checks.append(row(r["check"], r["status"], value, times, hint))
-    return {"checks": checks}
+    from .media_signal import signal
+    return signal(req)
 
 def compact(doc, cached=False):
     checks = doc["checks"]
@@ -110,6 +81,7 @@ def compact(doc, cached=False):
 
 def fit_compact(result):
     """Spend the budget on every non-PASS identity before optional details."""
+
     result['omitted_details']=result.get('omitted_details',0)
     result['not_checked_omitted_count']=result.get('not_checked_omitted_count',0)
     if result['not_checked_omitted_count']>0:
@@ -150,7 +122,10 @@ def fit_compact(result):
         raise ValueError('compact result exceeds byte budget: mandatory identities, paths and metadata retained')
     return result
 
-def _base_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", force=False, beat_led=False):
+def _base_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", force=False, beat_led=False, shape=None):
+    from .applicability import SHAPES, omitted, normalize_skips
+    if shape is not None and shape not in SHAPES:
+        raise ValueError('shape must be 9:16, 16:9 or 1:1')
     cfg = load()
     path = Path(file).expanduser().resolve()
     if not path.is_absolute() or not path.is_file():
@@ -172,7 +147,7 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
         raise ValueError("captions must be .ass or .srt")
     rules = rules_for(path, cfg)
     identity = fingerprint(path)
-    params = dict(platform=platform, captions=captions, script=script, brief=brief, expect_text=expect_text or [], mode=mode, beat_led=beat_led)
+    params = dict(platform=platform, captions=captions, script=script, brief=brief, expect_text=expect_text or [], mode=mode, beat_led=beat_led, shape=shape)
     # Include relevant code/data dependencies so installing audio/Arabic cannot leave stale SKIPs.
     dependencies = {"config":cfg, "engines":runtime_stamp(cfg), "code":[fingerprint(p) for p in Path(__file__).parent.rglob("*.py")]}
     key = hashlib.sha1(dumps([identity, params, VERSION, deps, rules["deps"], dependencies]).encode()).hexdigest()
@@ -193,9 +168,15 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
         frames_dir = run_dir / "frames"
         frames_dir.mkdir(parents=True)
         failure=error_result(exc,'probe',cfg['cache_dir'])
-        stage = {**skip('probe',failure['error']), 'log':failure['log']}
+        supported = path.suffix.lower() in {'.png','.jpg','.jpeg','.webp','.bmp','.tif','.tiff','.wav','.mp3','.flac','.ogg','.m4a','.mp4','.mov','.mkv','.webm','.avi'}
+        unavailable = isinstance(exc, (FileNotFoundError, ModuleNotFoundError, subprocess.TimeoutExpired))
+        if supported and not unavailable:
+            stage = {'checks': [row('decode','FAIL',failure['error']), omitted('dependent analysis','decode failed; dependent analysis unavailable','dependency_failed')], 'log':failure['log']}
+        else:
+            stage = {'checks': [omitted('probe',failure['error'] if unavailable else 'unsupported media kind','unavailable' if unavailable else 'not_applicable')], 'log':failure['log']}
+            stage['checks'].append(omitted('decode', 'no completed applicable decode check', 'dependency_failed'))
         doc = {"version": VERSION, "file": str(path), "identity": identity, "platform": platform or "unknown",
-               "inference": "unavailable: could not probe the video", "checks": stage["checks"],
+               "inference": "unavailable: could not probe media", "checks": stage["checks"],
                "stages": {"probe": stage}, "frames_dir": str(frames_dir)}
         doc["report"] = write_report(doc, run_dir)
         atomic(run_dir / "full.json", dumps(doc))
@@ -203,6 +184,9 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
         return compact(doc), doc
     platform_defs = platforms()
     inference = None
+    kind = meta.get('media_kind', 'video')
+    if kind not in {'video', 'video-without-audio'}:
+        platform = 'custom'
     if not platform:
         aspect = meta["width"] / meta["height"]
         if abs(aspect - 9/16) < .06:
@@ -218,47 +202,38 @@ def _base_check(file, platform=None, captions=None, script=None, brief=None, exp
     run_dir.mkdir(parents=True)
     request = {**params, "file": str(path), "platform": platform, "meta": meta,
                "rules": rules, "run_dir": str(run_dir), "cache_dir": cfg["cache_dir"], "config":cfg}
-    with futures.ThreadPoolExecutor(max_workers=6, thread_name_prefix="video-qc-stage") as pool:
-        editing = pool.submit(run_stage, "editing", request)
-        sig = pool.submit(run_stage, "signal", request)
-        audio = pool.submit(run_stage, "audio", request)
-        review = pool.submit(run_stage, "review", request)
-        def ocr_job():
-            return run_stage("ocr", {**request, "review": review.result()})
-        def vision_job():
-            if mode == "quick":
-                signal_rows = sig.result().get("checks", [])
-                if not signal_rows or any(r["status"] != "PASS" for r in signal_rows if r["id"] != "caption zone"):
-                    return skip("vision", "quick mode: signal checks did not all pass")
-            return run_stage("vision", {**request, "review": review.result()})
-        ocr = pool.submit(ocr_job)
-        vision = pool.submit(vision_job)
-        stages = {"signal": sig.result(), "review": review.result(), "audio": audio.result(), "ocr": ocr.result()}
-        stages["editing"] = editing.result()
-        stages["vision"] = crosscheck_vision(vision.result(), stages["ocr"])
-        stages["ocr"] = confirm_safe_zones(stages["ocr"],stages["vision"])
+    stages = applicable_stages(request, run_stage)
+    normalize_skips(stages)
     checks = [r for stage in stages.values() for r in stage.get("checks", [])]
+    if not any(r['id'] == 'decode' and r['status'] == 'PASS' for r in checks) and not any(r['status'] == 'FAIL' for r in checks):
+        checks.append(omitted('decode', 'no completed applicable decode check', 'dependency_failed'))
     if fingerprint(path) != identity:
-        checks.append(row("source_changed", "SKIP", "video changed during QC; result not cached; retry after render finishes"))
-    # Always disclose sparse visual/OCR coverage, even on mechanically clean media.
-    checks.append(row("continuous_review", "SKIP", "vision/OCR sample frames; continuous motion and listening not checked"))
+        checks.append(omitted('source_changed', 'media changed during QC; retry', 'dependency_failed'))
+    if kind in {'video', 'video-without-audio'}:
+        checks.append(omitted('continuous_review', 'vision/OCR sample frames; continuous motion and listening not checked', 'unavailable'))
     doc = {"version": VERSION, "file": str(path), "identity": identity, "platform": platform,
-           "inference": inference, "checks": checks, "stages": stages,
-           "frames_dir": stages["review"].get("frames_dir", str(run_dir / "frames"))}
-    doc["report"] = write_report(doc, run_dir)
-    atomic(run_dir / "full.json", dumps(doc))
-    if not any(r["id"] == "source_changed" for r in checks):
+           "media_kind": kind, "inference": inference, "checks": checks, "stages": stages,
+           "frames_dir": stages.get('review', {}).get('frames_dir', str(run_dir/'frames'))}
+    doc['report'] = write_report(doc, run_dir)
+    atomic(run_dir/'full.json', dumps(doc))
+    if not any(r['id'] == 'source_changed' for r in checks):
         atomic(cached_path, dumps(doc))
     return compact(doc), doc
-def quality_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", fix=False, force=False, beat_led=False):
-    result, doc = _base_check(file, platform, captions, script, brief, expect_text, mode, force, beat_led)
+
+def applicable_stages(request, runner):
+    from .routing import dispatch_stages
+    return dispatch_stages(request, runner)
+
+
+def quality_check(file, platform=None, captions=None, script=None, brief=None, expect_text=None, mode="quick", fix=False, force=False, beat_led=False, shape=None):
+    result, doc = _base_check(file, platform, captions, script, brief, expect_text, mode, force, beat_led, shape)
     if fix:
         fixed = apply_fix(doc, force, config=load())
         # Full commands belong in the human report, not in the model's context.
         atomic(Path(doc["report"]).with_name("fix.json"), dumps(fixed))
         result["fix"] = {k: v for k, v in fixed.items() if k != "commands"}
         if fixed["status"] == "written":
-            checked, _ = _base_check(fixed["file"], platform, captions, script, brief, expect_text, mode, False, beat_led)
+            checked, _ = _base_check(fixed["file"], platform, captions, script, brief, expect_text, mode, False, beat_led, shape)
             result["fix"].update(verdict=checked["verdict"], counts=checked["counts"], report=checked["report"])
         # Refit details around the fix result while preserving all finding identities.
         fit_compact(result)

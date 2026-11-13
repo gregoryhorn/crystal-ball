@@ -72,6 +72,7 @@ def register(ctx):
         'dir':{'type':'array','items':{'type':'string'},'description':'Restrict find to directories'},
         'at':{'type':'number','minimum':0,'description':'read_text timestamp in seconds'},
         'platform':{'type':'string'},
+        'shape':{'type':'string','enum':['9:16','16:9','1:1']},
         'mode':{'type':'string','enum':['quick','full'],'default':'quick'},
         'beat_led':{'type':'boolean','default':False},
         'music':{'type':'string','description':'Separate soundtrack for cuts, with matching timeline origin'},

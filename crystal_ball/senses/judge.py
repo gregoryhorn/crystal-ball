@@ -14,7 +14,8 @@ def vision_stage(req):
     cfg=req.get('config') or load()
     backend=cfg['judge']['backend']
     if backend=='off':
-        return skip('vision','judge backend off')
+        from ..applicability import omitted
+        return {'checks':[omitted('vision','Judge is disabled','not_requested')]}
     review=req['review']
     if not review.get('contact_sheet'):
         return skip('vision','contact sheet unavailable')
@@ -23,9 +24,15 @@ def vision_stage(req):
     candidates=cut_frames or frames
     selected=[candidates[round(i*(len(candidates)-1)/max(1,min(4,len(candidates))-1))] for i in range(min(4,len(candidates)))]
     rules=req['rules']['active'].encode()[:2048].decode(errors='ignore')
-    parts=[{'type':'text','text':CRITIQUE+'\nBrief: '+(req.get('brief') or '')[:1000]+'\nRules (context only):\n'+rules}]
-    for label,path in [('Timestamped contact sheet',review['contact_sheet'])]+[(f"Frame {f['time']}s",f['path']) for f in selected]:
-        parts += [{'type':'text','text':label},{'type':'image_url','image_url':{'url':'data:image/jpeg;base64,'+base64.b64encode(Path(path).read_bytes()).decode()}}]
+    still = req['meta'].get('media_kind') == 'image'
+    context = 'This is one still image, not video. Inspect only visible still defects; no motion or timeline claims. ' if still else ''
+    if req.get('platform') == 'custom' and not req.get('shape'):
+        context += 'No safe-zone or aspect target requested; do not invent one. '
+    parts=[{'type':'text','text':context+CRITIQUE+'\nBrief: '+(req.get('brief') or '')[:1000]+'\nRules (context only):\n'+rules}]
+    images = [('Full-resolution still',frames[0]['path'])] if still else [('Timestamped contact sheet',review['contact_sheet'])]+[(f"Frame {f['time']}s",f['path']) for f in selected]
+    for label,path in images:
+        mime = 'image/png' if Path(path).suffix.lower() == '.png' else 'image/jpeg'
+        parts += [{'type':'text','text':label},{'type':'image_url','image_url':{'url':'data:'+mime+';base64,'+base64.b64encode(Path(path).read_bytes()).decode()}}]
     messages=[{'role':'user','content':parts}]
     if backend=='hermes-auxiliary':
         from agent.auxiliary_client import call_llm, extract_content_or_reasoning

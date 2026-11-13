@@ -1,0 +1,16 @@
+........................................................................ [ 24%]
+.............ssssssss................................................... [ 48%]
+.............................................................. [ 69%]
+........................................................................ [ 93%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/platforms/test_paths.py::test_windows_asset_url_grammar
+  ~/Projects/crystal-ball/crystal_ball/report.py:18: DeprecationWarning: pathlib.PurePath.as_uri() is deprecated and scheduled for removal in Python 3.19. Use pathlib.Path.as_uri().
+    return native.as_uri()
+
+tests/platforms/test_paths.py::test_windows_asset_url_grammar
+  ~/Projects/crystal-ball/crystal_ball/report.py:14: DeprecationWarning: pathlib.PurePath.as_uri() is deprecated and scheduled for removal in Python 3.19. Use pathlib.Path.as_uri().
+    return native.as_uri()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+289 passed, 8 skipped, 2 warnings, 10 subtests passed in 52.38s

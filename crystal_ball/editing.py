@@ -93,8 +93,8 @@ def edit_stage(req):
         visual={}; failed('flash',exc)
     if shots:
         checks.append(pacing(shots['shots'],req['platform'],visual.get('visual_changes',[])))
-    import re
-    if req.get('beat_led') or re.search(r'\b(?:beat|music)[-\s]+led\b',req.get('brief') or '',re.I):
+    from .applicability import wants_beats
+    if req.get('meta',{}).get('media_kind') != 'video-without-audio' and wants_beats(req):
         try:
             if not shots:
                 raise RuntimeError('shots unavailable')

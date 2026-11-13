@@ -15,6 +15,7 @@ def parser():
     for option in ('platform','captions','script','brief'):
         c.add_argument('--'+option)
     c.add_argument('--mode',choices=['quick','full'],default='quick')
+    c.add_argument('--shape',choices=['9:16','16:9','1:1'])
     c.add_argument('--expect-text',action='append',default=[])
     for option in ('fix','force','json','beat-led'):
         c.add_argument('--'+option,action='store_true')
@@ -87,7 +88,9 @@ def main(argv=None):
                 if fixed.get('verdict'):
                     print(f"Fixed verdict: {fixed['verdict']}; report: {fixed['report']}")
         else:
-            print(dumps(compact_action(action,result) if action in {'beats','scenes','cuts'} else result))
+            payload=dumps(compact_action(action,result) if action in {'beats','scenes','cuts'} else result)
+            # At the exact compact limit, do not append a 1,501st wire byte.
+            print(payload,end='' if action=='check' and len(payload.encode())>=1500 else '\n')
         return int(result.get('verdict')=='FAIL' or action=='doctor' and any(r['status']=='FAIL' for r in result['checks']) or result.get('code',0)!=0)
     except Exception as exc:
         if action=='setup':

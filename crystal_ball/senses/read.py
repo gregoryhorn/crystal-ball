@@ -45,7 +45,8 @@ def filter_lines(lines, sizes, safe, platform, confirmed=(), cap=20):
         credible=sum(c.isalnum() for c in key)>=3 and min(l['confidence'] for l in edge)>=70
         persistent=len({l['time'] for l in edge})>=2
         status='FAIL' if credible and (persistent or key in {norm(t) for t in confirmed}) else 'WARN'
-        checks.append(row('ocr_safe_zone',status,f'"{group[0]["text"]}" overlaps {platform} UI safe border'+(' (unconfirmed OCR)' if status=='WARN' else ''),[[l['time'],l['time']] for l in edge][:6],'move source text inside the safe zone; re-render'))
+        border = f'{platform} safe border' if platform == 'generic 5% inset' else f'{platform} UI safe border'
+        checks.append(row('ocr_safe_zone',status,f'"{group[0]["text"]}" overlaps {border}'+(' (unconfirmed OCR)' if status=='WARN' else ''),[[l['time'],l['time']] for l in edge][:6],'move source text inside the safe zone; re-render'))
     return checks[:cap]
 
 def ocr_frames(file, frames, config=None):
@@ -74,9 +75,19 @@ def ocr_stage(req):
     frames=req['review'].get('frames',[])
     if not frames:
         return skip('ocr','review frames unavailable')
-    data=ocr_frames(req['file'],frames,req.get('config'))
+    try:
+        data=ocr_frames(req['file'],frames,req.get('config'))
+    except (FileNotFoundError, RuntimeError) as exc:
+        from ..applicability import omitted
+        return {'checks':[omitted('ocr','OCR engine unavailable','unavailable')], 'diagnostic':str(exc)}
     sizes={float(k):v for k,v in data['sizes'].items()}
-    checks=filter_lines(data['lines'],sizes,platforms().PLATFORMS[req['platform']]['safe'],req['platform'])
+    from ..applicability import omitted
+    if req['platform'] != 'custom':
+        checks=filter_lines(data['lines'],sizes,platforms().PLATFORMS[req['platform']]['safe'],req['platform'])
+    elif req.get('shape'):
+        checks=filter_lines(data['lines'],sizes,dict.fromkeys(('left','right','top','bottom'),.05),'generic 5% inset')
+    else:
+        checks=[omitted('ocr_safe_zone','no shape requested','not_requested')]
     expected=req.get('expect_text',[])
     # Deduplicate vocabulary by the same spelling-local normalization, not display copy.
     expected_keys={tuple(t[0] for t in _spelling_tokens(term)) for term in expected}
@@ -87,8 +98,10 @@ def ocr_stage(req):
     for expected in req.get('expect_text',[]):
         if not any(norm(expected) in norm(l['text']) for l in data['lines']):
             checks.append(row('expected_text','WARN',f'"{expected}" not confirmed in sampled OCR'))
-    if not checks:
-        checks=[row('ocr','PASS',f"{len(data['lines'])} confident lines checked")]
+    if not req.get('expect_text'):
+        checks.append(omitted('expected_text','no expected text supplied','not_requested'))
+    if not any(c['id']=='ocr' for c in checks):
+        checks.append(row('ocr','PASS',f"{len(data['lines'])} confident lines; OCR evidence, not universal readability proof"))
     if 'ara' not in data['languages']:
         checks.append(row('ocr_arabic','SKIP','Arabic traineddata unavailable'))
     return {**data,'checks':checks[:40],'boxes':data['lines'],'sampling':'full-size sampled frames; confidence >=70, >=3 alphanumeric characters and persistence required for FAIL'}

@@ -122,8 +122,9 @@ def test_stage_failure_isolation(clips, tmp_path, monkeypatch):
     result = q.quality_check(str(clips["good"]))
     assert any("synthetic signal failure" in value for value in result["not_checked"])
     doc = json.loads(Path(result["report"]).with_name("full.json").read_text())
-    assert doc["stages"]["review"]["frames"]
-    assert doc["stages"]["ocr"].get("lines") is not None
+    # MA-r1: without a completed decode, dependent engines must not run.
+    assert 'review' not in doc['stages'] and 'ocr' not in doc['stages']
+    assert any(r.get('skip_reason')=='dependency_failed' for r in doc['checks'])
 
 
 def test_worker_timeout_kills_descendants(tmp_path,assert_stopped):
@@ -382,7 +383,7 @@ def test_quick_gates_vision_full_calls_once(clips, tmp_path, monkeypatch):
     def stub(stage, req, timeout=None):
         stages.append(stage)
         if stage == "signal":
-            return {"checks": [q.row("black", "FAIL", "black video")]}
+            return {"checks": [q.row('decode','PASS','decoded fixture'), q.row("black", "FAIL", "black video")]}
         if stage == "review":
             return {"checks": [], "frames": [], "frames_dir": str(tmp_path / "frames")}
         return {"checks": [q.row(stage, "PASS", "stub")]}
@@ -408,13 +409,13 @@ def test_prose_is_not_a_name_misspelling():
     assert q.spelling_checks([{"time": t, "confidence": 95, "text": "Alexiz"} for t in (1,2)], ["Alexis"], proper_only=True)
 
 
-def test_unprobeable_file_has_skip_report(tmp_path, monkeypatch):
+def test_unprobeable_supported_file_has_failed_decode_report(tmp_path, monkeypatch):
     monkeypatch.setattr(q, "CACHE", tmp_path / "cache")
     path = tmp_path / "broken.mp4"
     path.write_bytes(b"not an mp4")
     result = q.quality_check(str(path))
-    assert result["verdict"] == "WARN" and result["counts"]["SKIP"] == 1
-    assert "probe:" in result["not_checked"][0]
+    assert result["verdict"] == "FAIL" and result["counts"]["FAIL"] == 1
+    assert any('decode failed' in value for value in result['not_checked'])
     assert Path(result["report"]).exists()
 
 
