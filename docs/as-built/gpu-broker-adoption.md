@@ -36,5 +36,50 @@ passed in 0.23s. The broker checkout's three fake-based integration tests also
 exercise actual Crystal Ball/Breeze admission against the real broker core;
 this extends the earlier repository-local boundary, not to live CUDA/services.
 
-Limitations: no live CUDA, local model, installed plugin, production state or
+Original implementation limitations: no live CUDA, local model, installed plugin, production state or
 live service integration was exercised. The broker's per-process-zero-memory completion rule is intentionally not weakened; persistent runtime memory can retain uncertainty until process exit/reconciliation. Other GPU callers and service capability gaps remain outside this repository's adoption claim.
+
+## Idle-only installed candidate activation, 2026-11-13
+
+Goal: activate the existing candidate only after its documented gates pass,
+without GPU work or restarting protected/shared services. Design input remains
+canonical app-design `gpu-broker/DESIGN.md` r1 (digest above) and
+`spec/integrations.md` r1, Crystal Ball section. User separately authorized
+idle-only activation/restart; no broker acquisition was authorized here.
+
+- Clean primary `main`, candidate `1b7ff76`, sole worktree. Re-ran the documented
+  non-live command with `/usr/bin/python3`, broker source
+  `/home/gregory/Projects/gpu-broker/src`, and profile scratch basetemp:
+  **208 passed, 8 deselected, 10 subtests passed in 24.09s**, exit 0.
+  Privacy scan PASS (91 publishable files, zero findings); whitespace gate passed.
+- Verified existing deployment at
+  `/home/gregory/.hermes/profiles/video/plugins/crystal-ball`. All vendor files
+  matched their installation manifest; only `gpu.py`, `senses/hear_worker.py`
+  and `senses/see.py` differed from candidate. After tests, backed up those
+  files and the manifest under the deployment's
+  `backups/gpu-broker-20261113T040939Z/`, copied exactly these three candidate
+  files, and updated only their manifest digests. Exact bytes and manifest
+  entries were read back successfully. No skill, config or AGENTS edits.
+- No Crystal Ball/hear user/system units were installed or loaded. Exact
+  `/proc` CLI/module process matching found no active Crystal Ball worker/CLI
+  immediately before writes; post-check also found none. There is no persistent
+  Crystal Ball service/idle API to restart. No shared Hermes gateway restart
+  was needed: tool dispatch starts fresh workers from the vendor tree. This
+  establishes process absence, not a service-supported busy/idle handshake.
+- From outside the checkout, installed-vendor `python -m crystal_ball --help`
+  exited 0. Both configured hear and see interpreters imported that vendor
+  `crystal_ball.gpu` with the new `Session` API; disabled sessions returned CPU
+  with no handle, without importing torch/faster-whisper or calling acquire.
+- **GPU admission is not yet operational in these engine environments:**
+  `gpu_broker` was not importable in either configured interpreter. Existing
+  fallback therefore remains fail-closed CPU until the optional machine-local
+  helper is made importable there. Foreign-engine environment construction
+  removes inherited PYTHONPATH, so a gateway-only path injection is insufficient.
+  No dependency/environment changes were made here. The absence of a global
+  crystal-ball executable also remains unchanged; the module entry point works
+  with the installed vendor import root.
+
+Activation is verified for newly spawned CLI/workers, not an in-memory gateway
+reload or live GPU inference/release. No production acquisition, GPU model job,
+unload test, stop, restart, kill or push was performed; vLLM/PRISM were untouched.
+The parent owns broker initialization and the single live integration check.
