@@ -1,6 +1,21 @@
 # Changelog
 
-## 1.2.0
+All notable changes are documented here, following
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+### Added
+- An end-to-end maintainer release checklist.
+
+### Changed
+- Organize this changelog by version, date and change category. Dates for 1.2.0
+  and 1.1.1 come from GitHub releases; earlier dates come from their version
+  commits, not evidence of a GitHub release publication.
+
+## [1.2.0] - 2026-11-13
+
+### Added
 
 - Native Windows support (Windows 10/11 x64, CPython 3.11): Windows paths and
   storage, trusted ffmpeg/ffprobe discovery, owned process trees, consent-based
@@ -13,7 +28,9 @@
 - Missing optional OCR (Tesseract) is reported as Not checked, not a failure.
 - Linux: find packages installed in Debian/Ubuntu system site-packages.
 
-## 1.1.1
+## [1.1.1] - 2026-11-12
+
+### Fixed
 
 - Report the exact number of `not_checked` entries left out of a compact result
   (`not_checked_omitted_count`); `more_not_checked_in_report` is now set only
@@ -24,7 +41,11 @@
 - A compact result that still exceeds the byte budget after all optional detail
   is trimmed now returns an error instead of an oversize result.
 
-## 1.1.0 / Milestone 2 (0.2.0 feature milestone)
+## [1.1.0] - 2026-11-12
+
+Milestone 2 (0.2.0 feature milestone).
+
+### Added
 
 - Add local librosa beat/onset analysis, estimated 4/4 bars/downbeats and novelty
   sections; JSON, CSV markers and frame-list exports.
@@ -40,7 +61,9 @@
 - Add synthetic and stub tests, with external-engine inference behind
   CRYSTAL_BALL_LIVE=1. No media, user scripts or models are bundled.
 
-## 1.0.0
+## [1.0.0] - 2026-11-12
+
+### Added
 
 - Merge isolated video QC and atomic CLIP indexing into a standalone package.
 - Add shared artifacts, configurable engines, JSON audio workers, script matching,
